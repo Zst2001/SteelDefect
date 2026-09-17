@@ -1,0 +1,102 @@
+\begin{table}[H]
+\vspace{-0.5em}
+\centering
+\caption{Summary of Segmentation Model Codes}
+\resizebox{\linewidth}{!}{
+\begin{tabular}{cccc}
+\toprule
+\textbf{Model Name} & \textbf{Year} & \textbf{Backbone Network} & \textbf{Keywords} \\ 
+\midrule
+EAMINet & 2021  & ResNet-34 & multi-level feature;fusion, edge \\
+\href{https://github.com/zxforchid/Edge-Aware-Multi-Level-Interactive-Network}{[Code Link]} \\
+
+DACNet & 2022 & ResNet-34 & Cascaded network;dense attention \\
+\href{https://github.com/zxforchid/DACNet}{[Code Link]} \\
+
+CPANet & 2023 & ResNet-50  & few-shot learning;cross position Aggregation network \\
+\href{https://github.com/VDT-2048/CPANet}{[Code Link]} \\
+
+Benchmark & 2024 & Transformer;CNN  & Machine vision;Automated inspection \\
+\href{https://github.com/djene-mengistu/dseg_models}{[Code Link]} \\
+
+DMRAN & 2024 & U2Net & Attention mechanism \\
+\href{https://github.com/zz-ux/Metal-surface-defect-detection}{[Code Link]} \\
+
+DDFNet & 2025 & MPARNet & Dual-branch decoder;Multi-scale attention fusion \\ 
+\href{https://github.com/13140W/DDFNet}{[Code Link]} \\
+
+MINet & 2024 & - & computational cost;multi-scale \\ 
+\href{https://github.com/Kunye-Shen/MINet}{[Code Link]} \\
+
+DFPANet & 2025 & ResNet34 & edge-guided;ultiscale fusion\\ 
+\href{https://github.com/hpguo1982/DFPANet}{[Code Link]} \\
+
+SME-DeepLabV3+ & 2025 & StarNet & Multi-scale attention;Star operation\\
+\href{https://github.com/Eric-863/SME-main/tree/main}{[Code Link]} \\
+
+
+\FloatBarrier
+\begin{table*}[t]
+\centering
+\small
+\renewcommand{\arraystretch}{1.05}
+\setlength{\tabcolsep}{6pt}
+\caption{Summary of Classification Datasets}
+\begin{tabular}{@{}lccc@{}}
+\toprule
+\textbf{Datasets} & \textbf{Object} & \textbf{Numbers} & \textbf{Size} \\ 
+\midrule
+NEU-CLS\footnote{\href{http://faculty.neu.edu.cn/songkc/en/zdylm/263265}{Link}} & Hot rolled steel strip & 1800 images (6 defect types, 300 samples each) & 200×200 pixels \\
+NEU-CLS-64\footnotemark[1] & Hot rolled steel strip & 9 defect types & 64×64 pixels \\
+X-SSD\footnote{\href{https://github.com/Fighter20092392/X-SDD-A-New-benchmark}{Link}} & Hot rolled steel strip & 7 typical defects, 1360 defect images & 640×640 pixels \\
+SteelBlastQC\footnote{\href{https://www.selectdataset.com/dataset/82d51b3d89d46f589afda3aa1600de21}{Link}} & Sandblasted steel surface & 1654 images & 512×512 pixels \\
+MSD-CLS\footnote{\href{https://github.com/successhaha/Gtnet}{Link}} & Steel & 500 images (10 defect types, 50 samples each) & 224×224 pixels \\
+\bottomrule
+\end{tabular}
+\label{tab:Classification Datasets}
+\end{table*}
+
+
+\begin{table*}[t]
+\centering
+\small
+\renewcommand{\arraystretch}{1.05}
+\setlength{\tabcolsep}{6pt}
+\caption{Summary of Detection Datasets}
+\begin{tabular}{@{}lccc@{}}
+\toprule
+\textbf{Datasets} & \textbf{Object} & \textbf{Numbers} & \textbf{Size} \\ 
+\midrule
+NEU-DET\footnote{\href{http://faculty.neu.edu.cn/songkc/en/zdylm/263265}{Link}} & Hot rolled steel strip & 1800 images (6 defect types, 300 samples each) & 200×200 pixels \\
+GC10-DET\footnote{\href{https://github.com/lvxiaoming2019/GC10-DET-Metallic-Surface-Defect-Datasets}{Link}} & Steel strip & 3570 images with 10 defect types & 2048×1000 pixels \\
+Severstal-steel-defect\footnote{\href{https://www.kaggle.com/c/severstal-steel-defect-detection/data}{Link}} & Steel strip & 6666 grayscale images (4 defect types) & 800×128 pixels \\
+MHPSDS\footnote{\href{https://github.com/clovermini/MVIT_metal_datasets}{Link}} & Medium and Heavy Plate & 4 typical defects, 680 images & 256×256 pixels \\
+Casting Billet Dataset\footnotemark[4] & Casting Billet & 6 typical defects, 1060 images & 96×106 to 3228×492 \\
+Steel Pipe Dataset\footnotemark[4] & Steel Pipe & 4 typical defects, 1,227 images & 728×544 pixels \\
+\bottomrule
+\end{tabular}
+\label{tab:Detection Datasets}
+\end{table*}
+
+
+\begin{table*}[t]
+\centering
+\small
+\renewcommand{\arraystretch}{1.05}
+\setlength{\tabcolsep}{6pt}
+\caption{Summary of Segmentation Datasets}
+\begin{tabular}{@{}lccc@{}}
+\toprule
+\textbf{Datasets} & \textbf{Object} & \textbf{Numbers} & \textbf{Size} \\ 
+\midrule
+NEU\_Seg\footnote{\href{http://faculty.neu.edu.cn/songkc/en/zdylm/263265}{Link}} & Hot rolled steel strip & 4470 images (3 defect types) & 200×200 pixels \\
+KolektorSDD2\footnote{\href{https://modelscope.cn/datasets/OpenDataLab/KolektorSDD2}{Link}} & Multiple types & Training: 2,085; Test: 1,004 & 230×630 pixels \\
+BSData\footnote{\href{https://hf-mirror.com/datasets/Gssmc/BSData}{Link}} & Ball Screw & 1104 three-channel images & multiple pixels \\
+RSDDs dataset\footnote{\href{https://aistudio.baidu.com/dataset/detail/97732/file}{Link}} & Rail surface & 2 types (67 images; 128 images) & multiple pixels \\
+SD-saliency-900\footnote{\href{https://github.com/SongGuorong/MCITF/tree/master/SD-saliency-900}{Link}} & Bar Steel & 900 images & 200×200 pixels \\
+FSSD-12\footnote{\href{https://pan.baidu.com/s/15k5QQXX8Ha7yXNcdWQvV5Q?pwd=pfnc}{Link}} & Steel strip & 12 typical defects, 50 samples each & 200×200 pixels \\
+Severstal Steel Defect\footnote{\href{https://pan.baidu.com/s/1U9KIqbNx9F1Sv7MTH_PzXQ?pwd=ydc3}{Link}} & Steel strip & Training: 5280; Test: 5506 & 1600×256 pixels \\
+\bottomrule
+\end{tabular}
+\label{tab:Segmentation Datasets}
+\end{table*}

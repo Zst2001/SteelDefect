@@ -12,7 +12,7 @@ from app.db.models import Session as AuthSession
 from app.db.models import User
 from app.deps import get_db
 from app.errors import AppError
-from app.security import verify_password
+from app.security import hash_password, verify_password
 from app.util_time import new_id, utcnow
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -21,6 +21,11 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 class LoginIn(BaseModel):
     username: str = Field(min_length=1, max_length=64)
     password: str = Field(min_length=1, max_length=128)
+
+
+class RegisterIn(BaseModel):
+    username: str = Field(min_length=2, max_length=32, pattern=r"^[A-Za-z0-9_\u4e00-\u9fff-]+$")
+    password: str = Field(min_length=8, max_length=128)
 
 
 def _user_payload(user: User) -> dict:
@@ -33,14 +38,8 @@ def _user_payload(user: User) -> dict:
     }
 
 
-@router.post("/login")
-def login(body: LoginIn, response: Response, db: Session = Depends(get_db)) -> dict:
+def _issue_session(db: Session, user: User, response: Response) -> dict:
     settings = get_settings()
-    user = db.query(User).filter(User.username == body.username).one_or_none()
-    if user is None or not verify_password(body.password, user.password_hash):
-        raise AppError("用户名或密码错误", code="BAD_CREDENTIALS", stage="auth", status_code=401)
-    if user.status != "active":
-        raise AppError("账号已停用", code="USER_DISABLED", stage="auth", status_code=403)
     session = AuthSession(
         id=new_id(),
         user_id=user.id,
@@ -57,6 +56,35 @@ def login(body: LoginIn, response: Response, db: Session = Depends(get_db)) -> d
         path="/",
     )
     return _user_payload(user)
+
+
+@router.post("/register")
+def register(body: RegisterIn, response: Response, db: Session = Depends(get_db)) -> dict:
+    username = body.username.strip()
+    taken = db.query(User).filter(User.username == username).one_or_none()
+    if taken:
+        raise AppError("用户名已被占用", code="USERNAME_TAKEN", stage="auth", status_code=409)
+    user = User(
+        id=new_id(),
+        username=username,
+        password_hash=hash_password(body.password),
+        role="student",
+        status="active",
+        quota_json={"max_upload_images": 50},
+    )
+    db.add(user)
+    db.flush()
+    return _issue_session(db, user, response)
+
+
+@router.post("/login")
+def login(body: LoginIn, response: Response, db: Session = Depends(get_db)) -> dict:
+    user = db.query(User).filter(User.username == body.username).one_or_none()
+    if user is None or not verify_password(body.password, user.password_hash):
+        raise AppError("用户名或密码错误", code="BAD_CREDENTIALS", stage="auth", status_code=401)
+    if user.status != "active":
+        raise AppError("账号已停用", code="USER_DISABLED", stage="auth", status_code=403)
+    return _issue_session(db, user, response)
 
 
 @router.post("/logout")

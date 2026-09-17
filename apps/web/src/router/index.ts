@@ -9,7 +9,8 @@ const router = createRouter({
       path: "/",
       component: () => import("../layouts/AppLayout.vue"),
       children: [
-        { path: "", name: "workbench", component: () => import("../views/WorkbenchView.vue") },
+        { path: "", name: "home", component: () => import("../views/HomeView.vue") },
+        { path: "workbench", name: "workbench", component: () => import("../views/WorkbenchView.vue") },
         { path: "compare/new", name: "compare-new", component: () => import("../views/compare/CompareNewView.vue") },
         { path: "compare/:taskId", name: "compare-task", component: () => import("../views/compare/CompareTaskView.vue") },
         { path: "datasets", name: "datasets", component: () => import("../views/PlaceholderView.vue"), meta: { title: "数据集", hint: "数据集中心将在后续切片完善。" } },
@@ -36,7 +37,7 @@ router.beforeEach(async (to) => {
   try {
     const { data } = await http.get("/auth/me");
     if (to.meta.advisor && data.role !== "advisor") {
-      return { name: "workbench" };
+      return { name: "home" };
     }
     return true;
   } catch {

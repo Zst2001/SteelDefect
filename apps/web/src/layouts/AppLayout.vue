@@ -1,15 +1,16 @@
 <template>
   <div class="shell">
     <aside class="side">
-      <div class="brand">
+      <router-link class="brand" to="/">
         <span class="mark"></span>
         <div>
           <div class="title">对照台</div>
           <div class="sub">工业缺陷分割 · CPU</div>
         </div>
-      </div>
+      </router-link>
       <el-menu :router="true" :default-active="active" background-color="#1c232b" text-color="#ece7dc" active-text-color="#d9a441">
-        <el-menu-item index="/">工作台</el-menu-item>
+        <el-menu-item index="/">首页</el-menu-item>
+        <el-menu-item index="/workbench">工作台</el-menu-item>
         <el-menu-item index="/compare/new">快速对比</el-menu-item>
         <el-menu-item index="/datasets">数据集</el-menu-item>
         <el-menu-item index="/models">模型中心</el-menu-item>
@@ -80,6 +81,7 @@ async function logout() {
   gap: 12px;
   align-items: center;
   padding: 0 20px 18px;
+  text-decoration: none;
 }
 .mark {
   width: 14px;
