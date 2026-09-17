@@ -1,0 +1,14 @@
+.venv
+.git
+storage
+apps/web/node_modules
+**/__pycache__
+**/*.pyc
+assets
+third_party
+tests
+scripts
+docs
+*.md
+.env
+.env.example

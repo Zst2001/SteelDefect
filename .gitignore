@@ -1,0 +1,23 @@
+.env
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+storage/
+uploads/
+*.log
+node_modules/
+apps/web/dist/
+apps/web/.vite/
+.idea/
+.vscode/
+Thumbs.db
+.DS_Store
+
+# Local payloads and files over GitHub's 100MB limit
+*.tar.gz
+assets/baselines/neu/best_deeplabv3.pth

@@ -1,0 +1,49 @@
+[project]
+name = "steel-lab-web"
+version = "0.1.0"
+description = "课题组工业缺陷分割科研网站（常驻 CPU：导入、推理、对比）"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "sqlalchemy>=2.0.36",
+    "alembic>=1.14",
+    "pymysql>=1.1",
+    "cryptography>=44",
+    "redis>=5.2",
+    "rq>=1.16",
+    "pydantic-settings>=2.6",
+    "python-multipart>=0.0.17",
+    "httpx>=0.28",
+    "numpy>=1.26",
+    "opencv-python-headless>=4.10",
+    "pillow>=11",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3",
+    "ruff>=0.9",
+]
+
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = []
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+extend-select = ["B", "I"]
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401"]
+"**/alembic/**" = ["E501"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-x"

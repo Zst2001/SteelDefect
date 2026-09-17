@@ -1,0 +1,3 @@
+f398ae7cc234f84cce63ae938fae06c67f72fd436c4733ef6a8c5ce1618668fc  best_deeplabv3.pth
+d7b43b61db9d226ffec3ffce0fa3ee4c255def4935c7c843a66b2d8b881064fe  best_unet.pth
+eee2b1a43d3e2ef58279f800f500b8c4a8612309439359ecd0f81dbd92fdfff9  best_unetpp.pth
