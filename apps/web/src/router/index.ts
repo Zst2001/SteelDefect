@@ -9,7 +9,7 @@ const router = createRouter({
       path: "/",
       component: () => import("../layouts/AppLayout.vue"),
       children: [
-        { path: "", name: "home", component: () => import("../views/HomeView.vue") },
+        { path: "", name: "home", component: () => import("../views/HomeView.vue"), meta: { public: true } },
         { path: "workbench", name: "workbench", component: () => import("../views/WorkbenchView.vue") },
         { path: "compare/new", name: "compare-new", component: () => import("../views/compare/CompareNewView.vue") },
         { path: "compare/:taskId", name: "compare-task", component: () => import("../views/compare/CompareTaskView.vue") },
@@ -30,8 +30,20 @@ const router = createRouter({
   ],
 });
 
+function isPublic(to: { matched: { meta: { public?: boolean } }[] }) {
+  return to.matched.some((record) => record.meta.public);
+}
+
 router.beforeEach(async (to) => {
-  if (to.meta.public) {
+  if (isPublic(to)) {
+    if (to.name === "login") {
+      try {
+        await http.get("/auth/me");
+        return { name: "home" };
+      } catch {
+        return true;
+      }
+    }
     return true;
   }
   try {

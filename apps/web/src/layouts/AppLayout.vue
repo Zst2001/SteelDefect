@@ -19,12 +19,17 @@
         <el-menu-item index="/assistant">科研助手</el-menu-item>
         <el-menu-item index="/detection">目标检测</el-menu-item>
         <el-menu-item index="/classification">缺陷分类</el-menu-item>
-        <el-menu-item v-if="role === 'advisor'" index="/admin">系统管理</el-menu-item>
+        <el-menu-item v-if="signedIn && role === 'advisor'" index="/admin">系统管理</el-menu-item>
       </el-menu>
-      <div class="account">
+      <div class="account" v-if="signedIn">
         <div class="who">{{ username }}</div>
         <div class="role">{{ role === "advisor" ? "导师" : "学生" }}</div>
         <button class="logout" type="button" @click="logout">退出</button>
+      </div>
+      <div class="account" v-else>
+        <div class="who">访客</div>
+        <div class="role">首页资源可直接浏览</div>
+        <router-link class="logout" to="/login">登录 / 注册</router-link>
       </div>
     </aside>
     <main class="main">
@@ -40,6 +45,7 @@ import { http } from "../api/http";
 
 const route = useRoute();
 const router = useRouter();
+const signedIn = ref(false);
 const role = ref<"student" | "advisor">("student");
 const username = ref("");
 
@@ -52,14 +58,24 @@ const active = computed(() => {
 });
 
 onMounted(async () => {
-  const { data } = await http.get("/auth/me");
-  role.value = data.role;
-  username.value = data.username;
+  try {
+    const { data } = await http.get("/auth/me");
+    signedIn.value = true;
+    role.value = data.role;
+    username.value = data.username;
+  } catch {
+    signedIn.value = false;
+  }
 });
 
 async function logout() {
-  await http.post("/auth/logout");
-  await router.push("/login");
+  try {
+    await http.post("/auth/logout");
+  } finally {
+    signedIn.value = false;
+    username.value = "";
+    await router.push("/");
+  }
 }
 </script>
 
@@ -115,6 +131,10 @@ async function logout() {
 }
 .logout {
   width: 100%;
+  display: block;
+  box-sizing: border-box;
+  text-align: center;
+  text-decoration: none;
   background: transparent;
   color: var(--lab-muted);
   border: 1px solid var(--lab-line);
