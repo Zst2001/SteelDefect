@@ -10,6 +10,7 @@
       </router-link>
       <el-menu :router="true" :default-active="active" background-color="#1c232b" text-color="#ece7dc" active-text-color="#d9a441">
         <el-menu-item index="/">首页</el-menu-item>
+        <el-menu-item index="/demo">公开演示</el-menu-item>
         <el-menu-item index="/workbench">工作台</el-menu-item>
         <el-menu-item index="/compare/new">快速对比</el-menu-item>
         <el-menu-item index="/datasets">数据集</el-menu-item>
@@ -28,8 +29,8 @@
       </div>
       <div class="account" v-else>
         <div class="who">访客</div>
-        <div class="role">首页资源可直接浏览</div>
-        <router-link class="logout" to="/login">登录 / 注册</router-link>
+        <div class="role">首页与公开演示可直接浏览</div>
+        <router-link class="logout" to="/login">登录</router-link>
       </div>
     </aside>
     <main class="main">
@@ -50,6 +51,7 @@ const role = ref<"student" | "advisor">("student");
 const username = ref("");
 
 const active = computed(() => {
+  if (route.path.startsWith("/demo")) return "/demo";
   if (route.path.startsWith("/models")) return "/models";
   if (route.path.startsWith("/compare")) return "/compare/new";
   if (route.path.startsWith("/datasets")) return "/datasets";

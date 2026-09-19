@@ -1,8 +1,21 @@
-# 课题组工业缺陷分割科研网站（第一版：Slice A–F）
+# 课题组工业缺陷分割科研网站
 
-常驻 CPU 网站：学生在 AutoDL 训完后把权重拿到本站，与内置 baseline 在同一批图上对照分割效果。网站不做训练。
+一套双面常驻 CPU 网站：对外是展示门户（免登录首页 + 公开演示），对内是学生实验台（AutoDL 训完导入权重，与内置 baseline 对照）。**网站不做训练。**
 
-## 第一版当前范围（A–F）
+首页综述由同事维护（`apps/web/src/views/HomeView.vue`），展示面编码不要改那份正文。
+
+## 当前范围
+
+### 展示面（H0–H6）
+
+- 免登录首页；侧栏「公开演示」进 `/demo`
+- 预备样例 NEU-20 全 20 张可点选（每次 1–5 张），仅 UNet / DeepLabV3+ / UNet++（每次 1–3 个）
+- 访客 24 小时内同一 IP ∧ 浏览器会话成功入队 3 次；超限「明日再试或登录」，登录后不计这 3 次
+- 只出原图 / 掩码 / 叠加 / 拼图；**不算、不展示 Acc / mIoU / mDice**
+- 关闭公开注册；学生账号由导师开通
+- 登录用户进 `/demo` 仍走公开演示协议（F-DEMO），不是快速对比
+
+### 实验台（Slice A–F）
 
 - 可启动：MySQL 8 + Redis、FastAPI、Vue 路由壳、种子账号
 - AC-01：内置 UNet / DeepLabV3+ / UNet++ 对无 GT 图推理，出原图 / 彩色掩码 / 叠加 / 拼图；无 GT 不返回、不渲染精度
@@ -10,7 +23,7 @@
 - 学生导入：单个 `.py` + `.pth`，静态扫描 + Docker 隔离检查；失败为不能启动并带 `fail_stage`
 - AC-04：全部图片配对掩码后，在原图显示尺寸上给出本批 mIoU / mDice / 逐类 IoU（参考指标，不代表完整测试集）；图层包可含 `gt/`、`error/`，仍不含 `metrics.json` / PDF
 - 正式评测：仅预置 **NEU-20**（固定测试集，学生不可下载 GT）。全量 20 张计算 mIoU / mDice / 逐类 IoU；Acc 只出现在详情，不作为主指标。拼图按文件名排序抽取 8 张。NEU-20 不是论文完整 test split
-- 结果记录：后续切片
+- 结果记录：本人对比/评测/演示档案；学生可将对比/评测提交导师（演示不可提交）；同学互不可见；再跑生成新任务；演示页不展示精度
 
 ## 仓库结构
 
@@ -71,15 +84,24 @@ npm run dev
 ```
 
 浏览器：http://127.0.0.1:5173（若端口占用则看 Vite 打印的 5174，请用 `localhost`）  
-本地种子账号（密码只写在 `.env.example` / `.env`）：`advisor` 与 `student`。
+本地种子账号（密码只写在 `.env.example` / `.env`）：`advisor` 与 `student`。  
+访客打开 http://127.0.0.1:5173/demo 即可点选预备样例；实验台菜单须登录。
 
 Worker 使用 RQ **SimpleWorker**：不 fork，L1 能缓存已加载的内置 `nn.Module`，并兼容 Windows。FastAPI / Worker **不得** `import` 学生 `.py`。
 
 学生插件契约：单文件提供 `build_model(num_classes, in_channels=3, **kwargs)` 或表单指定的 `nn.Module` 类；`forward` 主输出为 `B×C×H×W` logits。
 
-## 用 curl 验证 AC-01（无浏览器时）
+## 验收冒烟（API + Worker 已启动）
 
-三个进程都起来后：
+公开演示 AC-10～AC-13（脚本会清本地 `lab:demo:*` 限额 key，以便复测 3 次窗口）：
+
+```powershell
+python scripts/smoke_h.py
+```
+
+期望：免登录目录 20 张、入队可视化、`/metrics` 对 demo 为 404 `DEMO_NO_METRICS`、图层包无 `metrics.json`；第 4 次 429 `DEMO_QUOTA`；清 Cookie 同 IP 仍拒；登录后可再入队；访客上传/对比 401；`POST /auth/register` 403；导师可开通学生。
+
+实验台 AC-01（无 GT 对比）：
 
 ```powershell
 python scripts/smoke_ac01.py
@@ -124,6 +146,12 @@ python scripts/smoke_f.py
 
 `POST /api/tasks/eval` 仅接受 `eval_ready` 的预置固定测试集。上传批次应返回 `EVAL_DATASET_FORBIDDEN`。评测成功后 `scope=official_split`、`n=20`，图层包仍不含 `metrics.json` / PDF。
 
+单测（含展示面 H1–H6，不需 Worker）：
+
+```powershell
+python -m pytest tests/test_slice_h1.py tests/test_slice_h2.py tests/test_slice_h3.py tests/test_slice_h4.py tests/test_slice_h5.py tests/test_slice_h6.py tests/test_slice_g.py
+```
+
 ## 硬性约束（已落实）
 
 - 无 `/train`，不调用 `train.py` / `train_multi.py`
@@ -132,3 +160,4 @@ python scripts/smoke_f.py
 - DeepLab 构建 `pretrained=False`；checkpoint 优先 `model_state`；学生权重 `weights_only`
 - 对比写入 `PreprocessSpec`（默认 200×200 CLAHE/椒盐），禁止静默改尺寸
 - 检测 / 分类页按钮 disabled；科研助手无 API Key 时显示不可用
+- 公开演示不复用「上传 + 有 GT 出指标」的 compare 协议

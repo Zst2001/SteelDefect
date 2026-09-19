@@ -145,14 +145,20 @@ class Task(Base):
     __tablename__ = "tasks"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    type: Mapped[str] = mapped_column(String(16), nullable=False)  # compare | eval
-    creator_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), nullable=False, index=True)
+    type: Mapped[str] = mapped_column(String(16), nullable=False, index=True)  # compare | eval | demo
+    creator_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("users.id"), nullable=True, index=True)
+    guest_sid: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    guest_ip_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     dataset_version_id: Mapped[str] = mapped_column(String(36), ForeignKey("dataset_versions.id"), nullable=False)
     preprocess_id: Mapped[str] = mapped_column(String(36), ForeignKey("preprocess_specs.id"), nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="queued", index=True)
     has_gt: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     error_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+    note: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    archived: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, index=True)
+    submitted_to_advisor_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    advisor_seen_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False, index=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow, nullable=False)
 
     models: Mapped[list["TaskModel"]] = relationship(back_populates="task")
@@ -210,3 +216,15 @@ class MetricSet(Base):
     payload_json: Mapped[dict] = mapped_column(JSON, nullable=False)
 
     task: Mapped[Task] = relationship(back_populates="metric_set")
+
+
+class AuditLog(Base):
+    __tablename__ = "audit_logs"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    actor_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), nullable=False, index=True)
+    action: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    target_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    target_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    reason: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)

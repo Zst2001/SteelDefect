@@ -20,6 +20,7 @@ from app.util_time import new_id, utcnow
 from infer.spec import (
     BATCH_REFERENCE_DISCLAIMER,
     BUILTIN_DISPLAY_NAMES,
+    DEMO_CATALOG_KIND,
     ERROR_LEGEND,
     NEU_LEGEND,
     OFFICIAL_SPLIT_DISCLAIMER,
@@ -27,6 +28,12 @@ from infer.spec import (
 )
 from infer.task_io import metrics_response
 from rq import Queue
+
+TASK_TYPE_LABELS = {
+    "compare": "快速对比",
+    "eval": "正式评测",
+    "demo": "公开演示",
+}
 
 
 def _can_view_task(task: Task, user: User) -> bool:
@@ -186,6 +193,13 @@ def create_compare_task(
         raise AppError("数据集不存在", code="NOT_FOUND", stage="file", status_code=404)
     if dataset.visibility == "private" and dataset.owner_id != user.id and user.role != "advisor":
         raise AppError("无权使用该批次", code="FORBIDDEN", stage="auth", status_code=403)
+    if version.kind == DEMO_CATALOG_KIND:
+        raise AppError(
+            "公开演示请使用 /api/demo/tasks，不能走快速对比",
+            code="DEMO_USE_DEMO_API",
+            stage="protocol",
+            status_code=400,
+        )
 
     samples = db.query(Sample).filter(Sample.version_id == version.id).order_by(Sample.sample_key.asc()).all()
     if not samples:
@@ -343,7 +357,7 @@ def serialize_task(db: Session, task: Task) -> dict:
     return {
         "id": task.id,
         "type": task.type,
-        "type_label": "正式评测" if task.type == "eval" else "快速对比",
+        "type_label": TASK_TYPE_LABELS.get(task.type, task.type),
         "status": task.status,
         "has_gt": task.has_gt,
         "error_summary": task.error_summary,
@@ -374,6 +388,8 @@ def serialize_task(db: Session, task: Task) -> dict:
 
 
 def serialize_metrics(task: Task) -> dict:
+    if task.type == "demo":
+        raise AppError("公开演示不提供精度", code="DEMO_NO_METRICS", stage="protocol", status_code=404)
     if not task.has_gt:
         return metrics_response(has_gt=False)
     if task.metric_set is None:

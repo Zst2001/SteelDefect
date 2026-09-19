@@ -24,6 +24,7 @@ from app.db.models import (
     Weight,
 )
 from app.db.session import SessionLocal
+from app.services.demo import assert_demo_worker_contract
 from app.services.storage import resolve_uri
 from app.util_time import new_id, utcnow
 from infer.dataset_images import preprocess_rgb, read_rgb
@@ -35,6 +36,7 @@ from infer.spec import (
     BATCH_REFERENCE_SCOPE,
     BUILTIN_DISPLAY_NAMES,
     BUILTIN_SLUGS,
+    DEMO_DISCLAIMER,
     NEU_CLASS_MAP,
     OFFICIAL_SPLIT_SCOPE,
     PreprocessSpec,
@@ -120,6 +122,12 @@ def _upsert_metric_set(db: Session, task: Task, payload: dict, n: int, scope: st
 
 
 def _run_options(task: Task, settings) -> dict:
+    if task.type == "demo":
+        return {
+            "viz_limit": 0,
+            "metric_scope": None,
+            "include_acc": False,
+        }
     if task.type == "eval":
         return {
             "viz_limit": int(settings.eval_montage_samples),
@@ -134,27 +142,36 @@ def _run_options(task: Task, settings) -> dict:
 
 
 def run_compare(task_id: str) -> None:
-    _run_task(task_id)
+    _run_task(task_id, expected_types=("compare",))
 
 
 def run_eval(task_id: str) -> None:
-    _run_task(task_id)
+    _run_task(task_id, expected_types=("eval",))
 
 
-def _run_task(task_id: str) -> None:
+def run_demo(task_id: str) -> None:
+    _run_task(task_id, expected_types=("demo",))
+
+
+def _run_task(task_id: str, expected_types: tuple[str, ...]) -> None:
     settings = get_settings()
     db = SessionLocal()
     try:
         task = db.query(Task).filter(Task.id == task_id).with_for_update().one_or_none()
         if task is None:
             return
+        if task.type not in expected_types:
+            raise RuntimeError(f"job type mismatch: job={expected_types} task={task.type}")
         if task.status in {"success", "failed", "partial_success"}:
             return
         task.status = "running"
         task.updated_at = utcnow()
         db.commit()
         invalidate_after_write(task.id, task.creator_id)
-        _run_compare_body(db, task, settings)
+        if task.type == "demo":
+            _run_demo_body(db, task, settings)
+        else:
+            _run_compare_body(db, task, settings)
     except Exception as exc:
         db.rollback()
         task = db.get(Task, task_id)
@@ -170,6 +187,25 @@ def _run_task(task_id: str) -> None:
 
 
 def _run_compare_body(db: Session, task: Task, settings) -> None:
+    if task.type == "demo":
+        raise RuntimeError("compare worker refused demo task")
+    _run_inference_visuals(db, task, settings, mode="lab")
+
+
+def _run_demo_body(db: Session, task: Task, settings) -> None:
+    if task.type != "demo":
+        raise RuntimeError("demo worker refused non-demo task")
+    assert_demo_worker_contract(db, task)
+    task.has_gt = False
+    _run_inference_visuals(db, task, settings, mode="demo")
+
+
+def _run_inference_visuals(db: Session, task: Task, settings, *, mode: str) -> None:
+    demo_mode = mode == "demo"
+    if demo_mode and task.type != "demo":
+        raise RuntimeError("demo visuals require type=demo")
+    if not demo_mode and task.type == "demo":
+        raise RuntimeError("lab visuals refused demo task")
     preprocess_row = db.get(PreprocessSpecRow, task.preprocess_id)
     if preprocess_row is None:
         raise RuntimeError("missing preprocess spec")
@@ -210,7 +246,11 @@ def _run_compare_body(db: Session, task: Task, settings) -> None:
             _add_artifact(db, task.id, rel, "origin", sample.sample_key, None)
 
     gt_masks: dict[str, np.ndarray] = {}
-    score_gt = bool(task.has_gt)
+    score_gt = False if demo_mode else bool(task.has_gt)
+    if demo_mode:
+        if any(sample.mask_uri for sample in samples):
+            raise RuntimeError("demo worker refused sample with mask_uri")
+        score_gt = False
     if score_gt:
         if not all(sample.mask_uri for sample in samples):
             raise RuntimeError("task.has_gt but some samples have no mask")
@@ -245,6 +285,8 @@ def _run_compare_body(db: Session, task: Task, settings) -> None:
                 raise RuntimeError("当前环境不可运行（需要 CUDA）")
             pred_by_sample: dict[str, np.ndarray]
             if model_row and model_row.source == "student":
+                if demo_mode:
+                    raise RuntimeError("demo forbids student models")
                 raw_preds = infer_student_masks(db, mv, settings, task_id=task.id, tensors=tensors)
                 pred_by_sample = raw_preds
             else:
@@ -333,7 +375,7 @@ def _run_compare_body(db: Session, task: Task, settings) -> None:
             save_bgr_png(task_dir / err_rel, build_row(error_panels))
             _add_artifact(db, task.id, err_rel, "montage", sample.sample_key, None)
 
-    if score_gt and successful_models:
+    if score_gt and successful_models and not demo_mode:
         model_payload = []
         for tm in successful_models:
             mv = db.get(ModelVersion, tm.model_version_id)
@@ -397,7 +439,7 @@ def _run_compare_body(db: Session, task: Task, settings) -> None:
     task_payload = {
         "task_id": task.id,
         "type": task.type,
-        "has_gt": bool(task.has_gt),
+        "has_gt": False if demo_mode else bool(task.has_gt),
         "preprocess_id": task.preprocess_id,
         "preprocess": spec.to_dict(),
         "models": model_info,
@@ -406,6 +448,9 @@ def _run_compare_body(db: Session, task: Task, settings) -> None:
         "display_align": "original_size",
         "environment": env,
     }
+    if demo_mode:
+        task_payload["disclaimer"] = DEMO_DISCLAIMER
+        task_payload.pop("metrics", None)
     write_task_json(task_dir, task_payload)
     _add_artifact(db, task.id, "task.json", "log", None, None)
     _write_bundle(task_dir)

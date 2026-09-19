@@ -3,6 +3,7 @@ from __future__ import annotations
 from sqlalchemy.orm import Session, selectinload
 
 from app.db.models import Model, ModelVersion, Task, User
+from app.services.tasks import TASK_TYPE_LABELS
 
 NOTICES = [
     {
@@ -20,7 +21,7 @@ def _task_payload(task: Task) -> dict:
     return {
         "id": task.id,
         "type": task.type,
-        "type_label": "快速对比" if task.type == "compare" else "正式评测",
+        "type_label": TASK_TYPE_LABELS.get(task.type, task.type),
         "status": task.status,
         "has_gt": task.has_gt,
         "error_summary": task.error_summary,

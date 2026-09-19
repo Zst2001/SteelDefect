@@ -12,6 +12,7 @@ from app.config import get_settings
 from app.db.models import User
 from app.deps import get_db
 from app.errors import AppError
+from app.services.records import maybe_mark_advisor_seen
 from app.services.storage import safe_rel_path
 from app.services.tasks import (
     create_compare_task,
@@ -63,6 +64,7 @@ def create_eval(body: EvalIn, db: Session = Depends(get_db), user: User = Depend
 @router.get("/{task_id}")
 def get_task(task_id: str, db: Session = Depends(get_db), user: User = Depends(get_current_user)) -> dict:
     task = get_visible_task(db, task_id, user)
+    maybe_mark_advisor_seen(db, task, user)
     return serialize_task(db, task)
 
 

@@ -39,7 +39,7 @@
         </el-table-column>
         <el-table-column label="打开" width="100">
           <template #default="{ row }">
-            <router-link :to="taskPath(row)">查看</router-link>
+            <router-link :to="taskHref(row)">查看</router-link>
           </template>
         </el-table-column>
       </el-table>
@@ -52,7 +52,7 @@
         <el-table-column prop="error_summary" label="原因" />
         <el-table-column label="打开" width="100">
           <template #default="{ row }">
-            <router-link :to="taskPath(row)">查看</router-link>
+            <router-link :to="taskHref(row)">查看</router-link>
           </template>
         </el-table-column>
       </el-table>
@@ -70,12 +70,12 @@
         </el-table-column>
         <el-table-column label="操作" width="220">
           <template #default="{ row }">
-            <router-link :to="taskPath(row)">查看</router-link>
+            <router-link :to="taskHref(row)">查看</router-link>
             <el-button
               v-if="row.bundle_ready"
               link
               type="primary"
-              @click="downloadBundle(row.id)"
+              @click="downloadBundle(row)"
             >
               下载图层包
             </el-button>
@@ -103,7 +103,7 @@
 import { onMounted, ref } from "vue";
 import { ElMessage } from "element-plus";
 import { formatError, http } from "../api/http";
-import { downloadAuthFile, modelStatusLabel, taskStatusLabel } from "../api/labels";
+import { downloadAuthFile, modelStatusLabel, taskPath, taskStatusLabel } from "../api/labels";
 
 type DashTask = {
   id: string;
@@ -123,13 +123,14 @@ const active = ref<DashTask[]>([]);
 const failed = ref<DashTask[]>([]);
 const models = ref<DashModel[]>([]);
 
-function taskPath(row: DashTask) {
-  return row.type === "eval" ? `/eval/${row.id}` : `/compare/${row.id}`;
+function taskHref(row: DashTask) {
+  return taskPath(row.type, row.id);
 }
 
-async function downloadBundle(taskId: string) {
+async function downloadBundle(row: DashTask) {
   try {
-    await downloadAuthFile(`/tasks/${taskId}/bundle`, `${taskId}_drawio.zip`);
+    const path = row.type === "demo" ? `/demo/tasks/${row.id}/bundle` : `/tasks/${row.id}/bundle`;
+    await downloadAuthFile(path, `${row.id}_bundle.zip`);
   } catch (error) {
     ElMessage.error(formatError(error));
   }

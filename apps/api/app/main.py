@@ -10,7 +10,7 @@ from fastapi.responses import JSONResponse
 from app.bootstrap import ROOT  # noqa: F401  # path bootstrap
 from app.config import get_settings
 from app.errors import AppError, app_error_handler, error_payload
-from app.routers import auth, datasets, health, me, models, tasks, uploads
+from app.routers import admin, auth, datasets, demo, health, me, models, records, tasks, uploads
 
 
 @asynccontextmanager
@@ -54,8 +54,11 @@ async def validation_handler(_request: Request, exc: RequestValidationError) -> 
 
 app.include_router(health.router, prefix="/api")
 app.include_router(auth.router, prefix="/api")
+app.include_router(admin.router, prefix="/api")
+app.include_router(demo.router, prefix="/api")
 app.include_router(me.router, prefix="/api")
 app.include_router(models.router, prefix="/api")
 app.include_router(uploads.router, prefix="/api")
 app.include_router(datasets.router, prefix="/api")
 app.include_router(tasks.router, prefix="/api")
+app.include_router(records.router, prefix="/api")

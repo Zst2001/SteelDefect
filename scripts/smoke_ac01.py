@@ -29,7 +29,7 @@ def main() -> int:
         print("missing sample images")
         return 1
 
-    with httpx.Client(base_url=BASE, timeout=120.0, follow_redirects=True) as client:
+    with httpx.Client(base_url=BASE, timeout=120.0, follow_redirects=True, trust_env=False) as client:
         health = client.get("/health")
         health.raise_for_status()
         print("health", health.json())

@@ -19,7 +19,14 @@ from app.db.models import (
 from app.security import hash_password
 from app.util_time import new_id
 
-from infer.spec import BUILTIN_DISPLAY_NAMES, BUILTIN_SLUGS, BUILTIN_WEIGHT_FILES, NEU_CLASS_MAP, NEU_DEFAULT
+from infer.spec import (
+    BUILTIN_DISPLAY_NAMES,
+    BUILTIN_SLUGS,
+    BUILTIN_WEIGHT_FILES,
+    DEMO_CATALOG_KIND,
+    NEU_CLASS_MAP,
+    NEU_DEFAULT,
+)
 
 
 def _ensure_user(db: Session, username: str, password: str, role: str) -> User:
@@ -193,4 +200,54 @@ def seed_all(db: Session, settings: Settings) -> None:
                 )
             )
 
+    _ensure_demo_samples(db, preprocess, version)
     db.commit()
+
+
+def _ensure_demo_samples(db: Session, preprocess: PreprocessSpecRow, eval_version: DatasetVersion) -> None:
+    """Public demo catalog shares NEU-20 origins but never stores mask_uri."""
+    demo = (
+        db.query(DatasetVersion)
+        .filter(DatasetVersion.dataset_id == eval_version.dataset_id, DatasetVersion.kind == DEMO_CATALOG_KIND)
+        .one_or_none()
+    )
+    if demo is None:
+        demo = DatasetVersion(
+            id=new_id(),
+            dataset_id=eval_version.dataset_id,
+            kind=DEMO_CATALOG_KIND,
+            class_map_json=NEU_CLASS_MAP,
+            preprocess_id=preprocess.id,
+            is_fixed_test=False,
+            forbid_student_gt_download=True,
+        )
+        db.add(demo)
+        db.flush()
+    for row in db.query(Sample).filter(Sample.version_id == demo.id).all():
+        if row.mask_uri is not None:
+            row.mask_uri = None
+            db.add(row)
+    existing = {
+        row.sample_key for row in db.query(Sample).filter(Sample.version_id == demo.id).all()
+    }
+    sources = (
+        db.query(Sample)
+        .filter(Sample.version_id == eval_version.id)
+        .order_by(Sample.sample_key.asc())
+        .all()
+    )
+    for src in sources:
+        if src.sample_key in existing:
+            continue
+        db.add(
+            Sample(
+                id=new_id(),
+                version_id=demo.id,
+                sample_key=src.sample_key,
+                origin_uri=src.origin_uri,
+                mask_uri=None,
+                width=src.width,
+                height=src.height,
+                sha256=src.sha256,
+            )
+        )

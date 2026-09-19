@@ -28,7 +28,7 @@ def main() -> int:
             if line.startswith("SEED_STUDENT_PASSWORD="):
                 env_pass = line.split("=", 1)[1].strip()
 
-    with httpx.Client(base_url=BASE, timeout=60.0, follow_redirects=True) as client:
+    with httpx.Client(base_url=BASE, timeout=60.0, follow_redirects=True, trust_env=False) as client:
         login = client.post("/auth/login", json={"username": env_user, "password": env_pass})
         if login.status_code != 200:
             print("login failed", login.status_code, login.text)

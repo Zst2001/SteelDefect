@@ -13,6 +13,21 @@ from app.errors import AppError
 from app.util_time import utcnow
 
 
+def get_optional_user(
+    db: Session = Depends(get_db),
+    lab_session: str | None = Cookie(default=None, alias="lab_session"),
+) -> User | None:
+    if not lab_session:
+        return None
+    row = db.get(AuthSession, lab_session)
+    if row is None or row.expires_at < utcnow():
+        return None
+    user = db.get(User, row.user_id)
+    if user is None or user.status != "active":
+        return None
+    return user
+
+
 def get_current_user(
     db: Session = Depends(get_db),
     lab_session: str | None = Cookie(default=None, alias="lab_session"),

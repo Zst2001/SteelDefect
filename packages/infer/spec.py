@@ -41,6 +41,9 @@ class PreprocessSpec:
 NEU_DEFAULT = PreprocessSpec()
 
 BUILTIN_SLUGS = ("unet", "deeplabv3", "unetpp")
+DEMO_MODEL_SLUGS = BUILTIN_SLUGS
+DEMO_CATALOG_KIND = "demo_samples"
+DEMO_DISCLAIMER = "公开演示 / 预备样例 / 不代表测试集性能"
 
 BUILTIN_DISPLAY_NAMES = {
     "unet": "UNet",

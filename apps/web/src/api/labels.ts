@@ -5,8 +5,10 @@ export function roleLabel(role: string): string {
   return role === "advisor" ? "导师" : "学生";
 }
 
-export function taskTypeLabel(type: string): string {
-  return type === "eval" ? "正式评测" : "快速对比";
+export function taskPath(type: string, id: string): string {
+  if (type === "eval") return `/eval/${id}`;
+  if (type === "demo") return `/demo/${id}`;
+  return `/compare/${id}`;
 }
 
 export function taskStatusLabel(status: string): string {

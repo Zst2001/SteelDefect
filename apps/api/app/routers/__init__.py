@@ -1,5 +1,5 @@
 from __future__ import annotations
 
-from app.routers import auth, datasets, health, me, models, tasks, uploads
+from app.routers import admin, auth, datasets, demo, health, me, models, records, tasks, uploads
 
-__all__ = ["auth", "datasets", "health", "me", "models", "tasks", "uploads"]
+__all__ = ["admin", "auth", "datasets", "demo", "health", "me", "models", "records", "tasks", "uploads"]

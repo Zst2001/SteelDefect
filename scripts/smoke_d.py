@@ -65,7 +65,7 @@ def main() -> int:
     torch.save({"model_state": TinySeg().state_dict()}, buffer)
     pth_bytes = buffer.getvalue()
 
-    with httpx.Client(base_url=BASE, timeout=60.0, follow_redirects=True) as client:
+    with httpx.Client(base_url=BASE, timeout=60.0, follow_redirects=True, trust_env=False) as client:
         health = client.get("/health")
         health.raise_for_status()
         health_body = health.json()
