@@ -24,7 +24,7 @@ def docker_available() -> bool:
             ["docker", "info"],
             capture_output=True,
             text=True,
-            timeout=8,
+            timeout=20,
             check=False,
         )
     except (OSError, subprocess.TimeoutExpired):
@@ -38,7 +38,7 @@ def image_present(image: str) -> bool:
             ["docker", "image", "inspect", image],
             capture_output=True,
             text=True,
-            timeout=8,
+            timeout=20,
             check=False,
         )
     except (OSError, subprocess.TimeoutExpired):
