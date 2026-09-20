@@ -3,6 +3,14 @@ from __future__ import annotations
 import hashlib
 from pathlib import Path
 
+from infer.spec import (
+    BUILTIN_DISPLAY_NAMES,
+    BUILTIN_SLUGS,
+    BUILTIN_WEIGHT_FILES,
+    DEMO_CATALOG_KIND,
+    NEU_CLASS_MAP,
+    NEU_DEFAULT,
+)
 from sqlalchemy.orm import Session
 
 from app.config import Settings
@@ -17,16 +25,8 @@ from app.db.models import (
     Weight,
 )
 from app.security import hash_password
+from app.services.catalog import seed_catalog
 from app.util_time import new_id
-
-from infer.spec import (
-    BUILTIN_DISPLAY_NAMES,
-    BUILTIN_SLUGS,
-    BUILTIN_WEIGHT_FILES,
-    DEMO_CATALOG_KIND,
-    NEU_CLASS_MAP,
-    NEU_DEFAULT,
-)
 
 
 def _ensure_user(db: Session, username: str, password: str, role: str) -> User:
@@ -201,6 +201,7 @@ def seed_all(db: Session, settings: Settings) -> None:
             )
 
     _ensure_demo_samples(db, preprocess, version)
+    seed_catalog(db)
     db.commit()
 
 

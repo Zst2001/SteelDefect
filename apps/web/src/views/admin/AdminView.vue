@@ -23,6 +23,21 @@
       <p v-if="formError" class="err">{{ formError }}</p>
     </section>
 
+    <section class="panel">
+      <h2>首页统计</h2>
+      <p class="muted">显示在首页 Hero 下方，与条目数量独立，可按实际成果填写。</p>
+      <el-form class="form" label-position="top" @submit.prevent="saveStats">
+        <el-form-item label="研究模型">
+          <el-input-number v-model="statsForm.research_models" :min="0" :max="99999" />
+        </el-form-item>
+        <el-form-item label="论文成果">
+          <el-input-number v-model="statsForm.papers" :min="0" :max="99999" />
+        </el-form-item>
+        <el-button type="primary" native-type="submit" :loading="savingStats" class="go">保存统计</el-button>
+      </el-form>
+      <p class="muted">模型、成果、基金与数据集的上传 / 编辑 / 删除也可在首页以导师身份直接操作。</p>
+    </section>
+
     <section class="block">
       <h2>账号</h2>
       <el-table v-if="users.length" :data="users" size="small">
@@ -52,8 +67,9 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from "vue";
+import { onMounted, reactive, ref } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
+import { fetchCatalog } from "../../api/catalog";
 import { formatError, http } from "../../api/http";
 
 type LabUser = {
@@ -69,8 +85,10 @@ const username = ref("");
 const password = ref("");
 const reason = ref("开通学生账号");
 const saving = ref(false);
+const savingStats = ref(false);
 const formError = ref("");
 const listError = ref("");
+const statsForm = reactive({ research_models: 0, papers: 0 });
 
 async function loadUsers() {
   listError.value = "";
@@ -124,7 +142,31 @@ async function toggleStatus(row: LabUser) {
   }
 }
 
-onMounted(loadUsers);
+async function saveStats() {
+  savingStats.value = true;
+  try {
+    await http.put("/catalog/stats", {
+      research_models: statsForm.research_models,
+      papers: statsForm.papers,
+    });
+    ElMessage.success("首页统计已更新");
+  } catch (err) {
+    ElMessage.error(formatError(err));
+  } finally {
+    savingStats.value = false;
+  }
+}
+
+onMounted(async () => {
+  await loadUsers();
+  try {
+    const data = await fetchCatalog();
+    statsForm.research_models = data.stats.research_models;
+    statsForm.papers = data.stats.papers;
+  } catch {
+    /* 统计加载失败时保留 0，保存仍可重试 */
+  }
+});
 </script>
 
 <style scoped>
