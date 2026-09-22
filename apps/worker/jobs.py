@@ -36,17 +36,26 @@ from infer.spec import (
     BATCH_REFERENCE_SCOPE,
     BUILTIN_DISPLAY_NAMES,
     BUILTIN_SLUGS,
+    CAM_DISCLAIMER,
     DEMO_DISCLAIMER,
     NEU_CLASS_MAP,
     OFFICIAL_SPLIT_SCOPE,
     PreprocessSpec,
+)
+from infer.gradcam import (
+    cam_artifact_rel,
+    cam_class_ids,
+    cam_montage_rel,
+    compute_gradcam,
+    overlay_cam_rgb,
+    resolve_target_layer,
 )
 from infer.task_io import prepare_task_dirs, select_preview_keys, write_json, write_task_json
 from infer.viz import align_mask, boundary_bgr, colorize_bgr, error_map_bgr, overlay_rgb, save_bgr_png, save_rgb_png
 
 from apps.worker.student_exec import admit_version, infer_student_masks, measure_student_version
 
-BUNDLE_FOLDERS = ("origin", "gt", "pred", "overlay", "boundary", "error", "montage")
+BUNDLE_FOLDERS = ("origin", "gt", "pred", "overlay", "boundary", "error", "cam", "montage")
 
 
 def _classify_fail(exc: BaseException) -> str:
@@ -82,6 +91,45 @@ def _display_name(db: Session, mv: ModelVersion | None) -> str:
     if model_obj is not None:
         return model_obj.name
     return BUILTIN_DISPLAY_NAMES.get(mv.slug, "model")
+
+
+def _try_write_cam(
+    *,
+    db: Session,
+    task_id: str,
+    task_dir: Path,
+    module,
+    slug: str | None,
+    tensor,
+    pred_small: np.ndarray,
+    origin: np.ndarray,
+    sample_key: str,
+    model_version_id: str,
+    num_classes: int,
+) -> dict[int, np.ndarray]:
+    """Builtin-only. A CAM failure must not fail the model or the task."""
+    overlays: dict[int, np.ndarray] = {}
+    try:
+        layer = resolve_target_layer(module, slug=slug, num_classes=num_classes)
+    except Exception:
+        return overlays
+    for class_id in cam_class_ids(num_classes):
+        try:
+            cam = compute_gradcam(
+                module,
+                tensor,  # type: ignore[arg-type]
+                class_id=class_id,
+                pred_mask=pred_small,
+                target_layer=layer,
+            )
+            rgb = overlay_cam_rgb(origin, cam)
+            rel = cam_artifact_rel(model_version_id, sample_key, class_id)
+            save_rgb_png(task_dir / rel, rgb)
+            _add_artifact(db, task_id, rel, "cam", sample_key, model_version_id)
+            overlays[class_id] = rgb
+        except Exception:
+            continue
+    return overlays
 
 
 def _write_bundle(task_dir: Path) -> None:
@@ -272,6 +320,7 @@ def _run_inference_visuals(db: Session, task: Task, settings, *, mode: str) -> N
         db.query(TaskModel).filter(TaskModel.task_id == task.id).order_by(TaskModel.sort_order.asc()).all()
     )
     pred_masks: dict[str, dict[str, np.ndarray]] = {}
+    cam_overlays: dict[str, dict[str, dict[int, np.ndarray]]] = {}
     successful_models: list[TaskModel] = []
     confmats: dict[str, object] = {}
 
@@ -284,6 +333,7 @@ def _run_inference_visuals(db: Session, task: Task, settings, *, mode: str) -> N
             if mv.requires_cuda:
                 raise RuntimeError("当前环境不可运行（需要 CUDA）")
             pred_by_sample: dict[str, np.ndarray]
+            live_module = None
             if model_row and model_row.source == "student":
                 if demo_mode:
                     raise RuntimeError("demo forbids student models")
@@ -301,6 +351,7 @@ def _run_inference_visuals(db: Session, task: Task, settings, *, mode: str) -> N
                     sample.sample_key: predict_mask(module, tensors[sample.sample_key])  # type: ignore[arg-type]
                     for sample in samples
                 }
+                live_module = module
             pred_masks[mv.id] = {}
             if score_gt:
                 confmats[mv.id] = empty_confmat(spec.num_classes)
@@ -327,6 +378,22 @@ def _run_inference_visuals(db: Session, task: Task, settings, *, mode: str) -> N
                         err_rel = f"error/{mv.id}/{sample.sample_key}.png"
                         save_bgr_png(task_dir / err_rel, err)
                         _add_artifact(db, task.id, err_rel, "error", sample.sample_key, mv.id)
+                    if live_module is not None:
+                        written = _try_write_cam(
+                            db=db,
+                            task_id=task.id,
+                            task_dir=task_dir,
+                            module=live_module,
+                            slug=mv.slug,
+                            tensor=tensors[sample.sample_key],
+                            pred_small=mask_small,
+                            origin=origin,
+                            sample_key=sample.sample_key,
+                            model_version_id=mv.id,
+                            num_classes=mv.num_classes,
+                        )
+                        if written:
+                            cam_overlays.setdefault(mv.id, {})[sample.sample_key] = written
                 if score_gt:
                     confmats[mv.id] = add_to_confmat(
                         confmats[mv.id], aligned, gt_masks[sample.sample_key], spec.num_classes
@@ -374,6 +441,22 @@ def _run_inference_visuals(db: Session, task: Task, settings, *, mode: str) -> N
             err_rel = f"montage/{sample.sample_key}__error.png"
             save_bgr_png(task_dir / err_rel, build_row(error_panels))
             _add_artifact(db, task.id, err_rel, "montage", sample.sample_key, None)
+        for class_id in cam_class_ids(spec.num_classes):
+            cam_panels: list[tuple[str, np.ndarray]] = [("origin", origin_bgr)]
+            for tm in task_models:
+                mv = db.get(ModelVersion, tm.model_version_id)
+                name = _display_name(db, mv)
+                if tm.status != "success" or mv is None:
+                    continue
+                rgb = cam_overlays.get(mv.id, {}).get(sample.sample_key, {}).get(class_id)
+                if rgb is None:
+                    continue
+                cam_panels.append((name, cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)))
+            if len(cam_panels) <= 1:
+                continue
+            cam_rel = cam_montage_rel(sample.sample_key, class_id)
+            save_bgr_png(task_dir / cam_rel, build_row(cam_panels))
+            _add_artifact(db, task.id, cam_rel, "montage", sample.sample_key, None)
 
     if score_gt and successful_models and not demo_mode:
         model_payload = []
@@ -451,6 +534,7 @@ def _run_inference_visuals(db: Session, task: Task, settings, *, mode: str) -> N
     if demo_mode:
         task_payload["disclaimer"] = DEMO_DISCLAIMER
         task_payload.pop("metrics", None)
+    task_payload["cam_disclaimer"] = CAM_DISCLAIMER
     write_task_json(task_dir, task_payload)
     _add_artifact(db, task.id, "task.json", "log", None, None)
     _write_bundle(task_dir)

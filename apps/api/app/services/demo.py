@@ -19,12 +19,12 @@ from app.services.demo_identity import DemoIdentity
 from app.services.demo_quota import raise_demo_quota, release_guest_quota, reserve_guest_quota
 from app.services.tasks import TASK_TYPE_LABELS, _attach_models_and_samples, _enqueue_task
 from app.util_time import new_id, utcnow
-from infer.spec import DEMO_CATALOG_KIND, DEMO_DISCLAIMER, DEMO_MODEL_SLUGS, NEU_LEGEND
+from infer.spec import CAM_DISCLAIMER, DEMO_CATALOG_KIND, DEMO_DISCLAIMER, DEMO_MODEL_SLUGS, NEU_LEGEND
 
 GT_LEAK_KEYS = ("mask_uri", "mask", "has_mask", "has_gt", "origin_uri", "gt")
 METRIC_LEAK_TOKENS = ("metrics", "miou", "mdice", "acc", "metric_set", "available")
 GT_FIELD_TOKENS = ("mask_uri", "has_mask", "has_gt", "metrics", "miou", "mdice", "acc")
-DEMO_ARTIFACT_KINDS = {"origin", "pred_color", "overlay", "boundary", "montage", "bundle", "log"}
+DEMO_ARTIFACT_KINDS = {"origin", "pred_color", "overlay", "boundary", "cam", "montage", "bundle", "log"}
 
 
 def get_demo_version(db: Session) -> DatasetVersion:
@@ -355,6 +355,7 @@ def serialize_demo_task(db: Session, task: Task) -> dict:
         "preview_sample_keys": preview_keys,
         "artifacts": artifacts,
         "legend": NEU_LEGEND,
+        "cam_disclaimer": CAM_DISCLAIMER,
         "bundle_ready": task.status in {"success", "partial_success"},
         "bundle_url": f"/api/demo/tasks/{task.id}/bundle" if task.status in {"success", "partial_success"} else None,
     }

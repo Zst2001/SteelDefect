@@ -2,11 +2,29 @@
   <div>
     <header class="hero">
       <div class="hero-inner">
-        <h1 class="hero-title">钢铁缺陷智能检测平台</h1>
-        <p class="hero-subtitle">面向钢铁表面缺陷分类、检测与分割的科研实验平台</p>
+        <h1 class="hero-title">智能感知与精密工业检测实验室</h1>
+        <p class="hero-subtitle">江西师范大学人工智能学院 · IPPI Lab</p>
         <p class="hero-desc">
-          汇集课题组研究成果、钢铁缺陷检测模型及公开数据集，为算法研究、模型对比与实验验证提供统一入口。
+          智能感知与精密工业检测实验室（IPPI Lab）隶属于江西师范大学人工智能学院，由邹翔老师领衔。实验室聚焦计算机视觉前沿领域，深耕工业缺陷检测与精密图像分割核心方向，科研工作获国家自然科学基金、江西省科技创新基地计划等国家级与省级项目资助。团队现有师生20余人，以计算机技术、软件工程专业硕士为核心力量，科研成果丰硕，人才培养成效突出，多名优秀本科生保研至985高校深造。
         </p>
+        <p class="hero-site">本站是实验室的科研实验平台，汇集成果、公开模型与数据集，并提供对照与演示。</p>
+        <details class="about" @toggle="onAboutToggle">
+          <summary>{{ aboutOpen ? "收起介绍" : "详细介绍" }}</summary>
+          <div class="about-body">
+            <p>
+              智能感知与精密工业检测实验室（Intelligent Perception and Precision Industrial Inspection Laboratory，简称IPPI Lab）隶属于江西师范大学人工智能学院，由邹翔老师领衔组建。实验室现有核心成员二十余名，以计算机技术、软件工程专业硕士研究生为主体，同时吸纳优秀本科生参与科研攻关。团队立足计算机视觉学科前沿，聚焦工业缺陷检测、工业图像精密分割核心研究方向，围绕智能感知基础算法、工业场景高精度检测、缺陷语义分割与实例分割等方向开展系统性理论创新与应用落地研究，致力于破解高端制造领域精密质检的关键技术难题。
+            </p>
+            <p>
+              实验室科研工作得到国家级与省级科研基金的持续资助，相关研究先后获得国家自然科学基金项目（项目编号：62202211）、江西省科技创新基地计划项目（项目编号：20242BCC32021）支持，配备完善的算力支撑平台与工业实验环境，为高质量科研产出提供了坚实保障。
+            </p>
+            <p>
+              团队科研成果与人才培养成效突出：研究生成员累计斩获多项国家级、省级专业竞赛奖项与学术荣誉，研究成果陆续发表于国内外权威期刊与学术会议；人才培养梯队建设成果显著，先后有多名优秀本科生成员保研至985高校深造，构建了“本研衔接、研用结合”的高质量人才培养体系。
+            </p>
+            <p>
+              面向未来，实验室将紧扣智能制造国家战略需求，持续深耕智能感知与精密工业检测领域，致力建设成为省内领先、国内具有一定影响力的工业视觉科研创新与高水平人才培养基地。
+            </p>
+          </div>
+        </details>
         <div class="hero-actions">
           <router-link class="btn btn-primary" to="/workbench">进入工作台</router-link>
           <a class="btn btn-secondary" href="#research-works" @click.prevent="scrollTo('research-works')">查看研究成果</a>
@@ -227,6 +245,7 @@ const editFund = ref<CatalogFund | null>(null);
 const creatingFund = ref(false);
 const editingStats = ref(false);
 const savingStats = ref(false);
+const aboutOpen = ref(false);
 const statsForm = reactive({ research_models: 0, papers: 0 });
 
 const filteredModels = computed(() => filterByTask(models.value, modelFilter.value));
@@ -241,6 +260,11 @@ watch(editingStats, (open) => {
 
 function scrollTo(id: string) {
   document.getElementById(id)?.scrollIntoView({ block: "start" });
+}
+
+function onAboutToggle(event: Event) {
+  const el = event.target;
+  aboutOpen.value = el instanceof HTMLDetailsElement && el.open;
 }
 
 async function reload() {
@@ -402,10 +426,58 @@ onMounted(async () => {
   color: var(--lab-accent-2);
 }
 .hero-desc {
-  margin: 0 0 28px;
+  margin: 0 0 12px;
   color: var(--lab-muted);
   font-size: 14px;
   line-height: 1.75;
+}
+.hero-site {
+  margin: 0 0 16px;
+  color: var(--lab-muted);
+  font-size: 13px;
+  line-height: 1.7;
+}
+.about {
+  margin: 0 0 28px;
+}
+.about summary {
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--lab-accent-2);
+  font-size: 14px;
+  list-style: none;
+}
+.about summary::-webkit-details-marker {
+  display: none;
+}
+.about summary::after {
+  content: "";
+  width: 0;
+  height: 0;
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  border-top: 5px solid currentColor;
+  transform: translateY(1px);
+}
+.about[open] summary::after {
+  transform: translateY(-1px) rotate(180deg);
+}
+.about summary:hover {
+  color: var(--lab-text);
+}
+.about-body {
+  margin-top: 14px;
+}
+.about-body p {
+  margin: 0 0 12px;
+  color: var(--lab-muted);
+  font-size: 14px;
+  line-height: 1.75;
+}
+.about-body p:last-child {
+  margin-bottom: 0;
 }
 .hero-actions {
   display: flex;

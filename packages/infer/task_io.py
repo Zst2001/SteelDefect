@@ -12,6 +12,7 @@ TASK_DIR_NAMES = (
     "overlay",
     "boundary",
     "error",
+    "cam",
     "montage",
 )
 

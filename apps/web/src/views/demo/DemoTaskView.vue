@@ -30,7 +30,9 @@
     <el-radio-group v-model="view" class="mb">
       <el-radio-button label="mask">彩色掩码拼图</el-radio-button>
       <el-radio-button label="overlay">叠加拼图</el-radio-button>
+      <el-radio-button label="cam">热力图</el-radio-button>
     </el-radio-group>
+    <p v-if="view === 'cam'" class="cam-note">{{ task?.cam_disclaimer || "解释图：热区表示模型对该类预测的贡献，不是标注。蓝低红高。" }}</p>
 
     <div v-if="currentSample" class="stage">
       <div class="toolbar">
@@ -40,6 +42,13 @@
           <el-slider v-model="defectAlpha" :min="0" :max="100" style="width: 180px" />
           <span class="alpha-val">{{ defectAlpha }}%</span>
         </template>
+        <template v-if="view === 'cam'">
+          <span class="alpha-label">缺陷类别</span>
+          <el-radio-group v-model="camClass" size="small">
+            <el-radio-button v-for="item in camClasses" :key="item.id" :label="item.id">{{ item.name }}</el-radio-button>
+          </el-radio-group>
+          <span class="jet" title="Jet：蓝低红高"><i></i>蓝低 · 红高</span>
+        </template>
       </div>
       <OverlayMontage
         v-if="view === 'overlay' && originUrl && overlayPanels.length"
@@ -47,6 +56,8 @@
         :panels="overlayPanels"
         :alpha="defectAlpha"
       />
+      <img v-else-if="view === 'cam' && camUrl" :src="camUrl" :alt="`${currentSample.sample_key} Grad-CAM`" />
+      <p v-else-if="view === 'cam'" class="cam-empty">暂无热力图。演示只对内置模型生成 Grad-CAM。</p>
       <img v-else-if="montageUrl" :src="montageUrl" :alt="currentSample.sample_key" />
     </div>
 
@@ -60,6 +71,7 @@
       <el-button v-if="originUrl" link type="primary" @click="openLayer(originUrl, `${currentSample?.sample_key}_origin.png`)">原图</el-button>
       <el-button v-if="maskUrl" link type="primary" @click="openLayer(maskUrl, `${currentSample?.sample_key}__mask.png`)">本张掩码拼图</el-button>
       <el-button v-if="overlayUrl" link type="primary" @click="openLayer(overlayUrl, `${currentSample?.sample_key}__overlay.png`)">本张叠加拼图</el-button>
+      <el-button v-if="camUrl" link type="primary" @click="openLayer(camUrl, `${currentSample?.sample_key}__cam_c${camClass}.png`)">本张热力图拼图</el-button>
       <el-button type="primary" :disabled="!bundleReady" @click="downloadBundle">下载图层包</el-button>
       <router-link class="back" to="/demo">再选样例</router-link>
     </div>
@@ -96,6 +108,7 @@ type Task = {
   preview_sample_keys?: string[];
   artifacts: Artifact[];
   legend: Array<{ id: number; name: string; color: string }>;
+  cam_disclaimer?: string;
   models: Array<{ model_version_id: string; name: string; status: string; fail_stage?: string; fail_message?: string }>;
   bundle_ready?: boolean;
 };
@@ -105,8 +118,9 @@ const taskId = computed(() => String(route.params.taskId));
 const task = ref<Task | null>(null);
 const loadError = ref("");
 const index = ref(0);
-const view = ref<"mask" | "overlay">("mask");
+const view = ref<"mask" | "overlay" | "cam">("mask");
 const defectAlpha = ref(45);
+const camClass = ref(1);
 let timer: number | undefined;
 
 const previewSamples = computed(() => {
@@ -134,7 +148,20 @@ function sampleUrl(kind: string, needle?: string, modelVersionId?: string | null
 const maskUrl = computed(() => sampleUrl("montage", "__mask"));
 const overlayUrl = computed(() => sampleUrl("montage", "__overlay"));
 const originUrl = computed(() => sampleUrl("origin"));
-const montageUrl = computed(() => (view.value === "overlay" ? overlayUrl.value : maskUrl.value));
+const camClasses = computed(() => {
+  const rows = (task.value?.legend ?? []).filter((item) => Number(item.id) > 0);
+  return rows.length ? rows : [
+    { id: 1, name: "夹渣", color: "#e23d2e" },
+    { id: 2, name: "斑块", color: "#2f9e44" },
+    { id: 3, name: "划痕", color: "#2f6fed" },
+  ];
+});
+const camUrl = computed(() => sampleUrl("montage", `__cam_c${camClass.value}.png`));
+const montageUrl = computed(() => {
+  if (view.value === "overlay") return overlayUrl.value;
+  if (view.value === "cam") return camUrl.value;
+  return maskUrl.value;
+});
 const overlayPanels = computed((): OverlayPanel[] => {
   const rows: OverlayPanel[] = [{ title: "origin" }];
   for (const model of task.value?.models ?? []) {
@@ -237,6 +264,28 @@ onUnmounted(() => {
 .alpha-val {
   color: var(--lab-muted);
   font-size: 13px;
+}
+.cam-note,
+.cam-empty {
+  color: var(--lab-muted);
+  font-size: 13px;
+  margin: 0 0 12px;
+}
+.cam-empty {
+  margin: 24px 8px;
+}
+.jet {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--lab-muted);
+  font-size: 12px;
+}
+.jet i {
+  width: 72px;
+  height: 8px;
+  border-radius: 4px;
+  background: linear-gradient(90deg, #0000aa, #00ffff, #00ff00, #ffff00, #ff0000);
 }
 .toolbar,
 .pager,

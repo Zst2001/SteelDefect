@@ -3,6 +3,7 @@ from __future__ import annotations
 from infer.spec import (
     BATCH_REFERENCE_DISCLAIMER,
     BUILTIN_DISPLAY_NAMES,
+    CAM_DISCLAIMER,
     COMPARE_BASELINE_LIMIT,
     DEMO_CATALOG_KIND,
     ERROR_LEGEND,
@@ -396,6 +397,7 @@ def serialize_task(db: Session, task: Task) -> dict:
         "artifacts": artifacts,
         "legend": NEU_LEGEND,
         "error_legend": ERROR_LEGEND if task.has_gt else [],
+        "cam_disclaimer": CAM_DISCLAIMER,
         "bundle_ready": task.status in {"success", "partial_success"},
     }
 

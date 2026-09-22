@@ -56,6 +56,7 @@ COMPARE_BASELINE_LIMIT = 3
 EVAL_BASELINE_LIMIT = len(BUILTIN_SLUGS)
 DEMO_CATALOG_KIND = "demo_samples"
 DEMO_DISCLAIMER = "公开演示 / 预备样例 / 不代表测试集性能"
+CAM_DISCLAIMER = "解释图：热区表示模型对该类预测的贡献，不是标注。蓝低红高。"
 
 BUILTIN_DISPLAY_NAMES = {
     "unet": "UNet",

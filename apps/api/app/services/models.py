@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session, selectinload
 from app.db.models import Model, ModelVersion, PreprocessSpecRow, User
 from app.services.import_model import model_dir, read_report
 
-VIZ_KINDS = ["origin", "pred_color", "overlay", "boundary", "montage"]
+VIZ_KINDS = ["origin", "pred_color", "overlay", "boundary", "cam", "montage"]
 
 
 def can_view_version(user: User, model: Model, version: ModelVersion) -> bool:
