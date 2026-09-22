@@ -228,3 +228,91 @@ class AuditLog(Base):
     target_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
     reason: Mapped[str] = mapped_column(String(255), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+
+
+class HomeStat(Base):
+    __tablename__ = "home_stats"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    research_models: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    papers: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow, nullable=False)
+
+
+class CatalogModel(Base):
+    """Homepage catalog of literature / group models. Not the runnable lab Model table."""
+
+    __tablename__ = "catalog_models"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
+    year: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    task_type: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    backbone: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    keywords: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    paper_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    code_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    dataset: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    detail: Mapped[str | None] = mapped_column(Text, nullable=True)
+    is_group_work: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, index=True)
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow, nullable=False)
+
+
+class CatalogWork(Base):
+    """Group research outcomes shown on the homepage. No source-code links."""
+
+    __tablename__ = "catalog_works"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    kind: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    year: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    venue: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    authors: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    link_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow, nullable=False)
+
+
+class CatalogFund(Base):
+    """Advisor research grants shown on the homepage."""
+
+    __tablename__ = "catalog_funds"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    source: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    number: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    role: Mapped[str] = mapped_column(String(32), nullable=False, default="pi")
+    start_year: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    end_year: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="ongoing")
+    amount_text: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    detail: Mapped[str | None] = mapped_column(Text, nullable=True)
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow, nullable=False)
+
+
+class CatalogDataset(Base):
+    __tablename__ = "catalog_datasets"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
+    task_type: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    source_object: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    numbers_text: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    image_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    class_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    defect_types: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    size: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    url: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    access_note: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    detail: Mapped[str | None] = mapped_column(Text, nullable=True)
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow, nullable=False)
