@@ -17,7 +17,12 @@
       </el-radio>
     </el-radio-group>
 
-    <h2>内置 baseline（1–3 个）</h2>
+    <h2>内置 baseline（可全选）</h2>
+    <p class="meta">至少选 1 个。当前 {{ builtins.length }} 个可运行模型均可加入本次评测。</p>
+    <div class="pick-all">
+      <el-button link type="primary" @click="selectAll">全选</el-button>
+      <el-button link @click="selected = []">清空</el-button>
+    </div>
     <el-checkbox-group v-model="selected">
       <el-checkbox v-for="model in builtins" :key="model.id" :label="model.id">
         {{ model.name }}
@@ -76,11 +81,12 @@ const submitting = ref(false);
 const error = ref("");
 
 const canSubmit = computed(
-  () =>
-    Boolean(versionId.value) &&
-    selected.value.length >= 1 &&
-    selected.value.length <= 3,
+  () => Boolean(versionId.value) && selected.value.length >= 1 && selected.value.length <= builtins.value.length,
 );
+
+function selectAll() {
+  selected.value = builtins.value.map((item) => item.id);
+}
 
 onMounted(async () => {
   const [modelsRes, datasetsRes] = await Promise.all([http.get("/models"), http.get("/datasets")]);
@@ -97,7 +103,7 @@ onMounted(async () => {
   if (wanted && builtins.value.some((item) => item.id === wanted)) {
     selected.value = [wanted];
   } else {
-    selected.value = builtins.value.slice(0, 3).map((item) => item.id);
+    selected.value = builtins.value.map((item) => item.id);
   }
   const wantedStudent = typeof route.query.student === "string" ? route.query.student : "";
   if (wantedStudent && students.value.some((item) => item.id === wantedStudent)) {
@@ -151,6 +157,11 @@ async function submit() {
 }
 .actions {
   margin-top: 24px;
+}
+.pick-all {
+  display: flex;
+  gap: 8px;
+  margin: 4px 0 8px;
 }
 .err {
   color: var(--lab-danger);

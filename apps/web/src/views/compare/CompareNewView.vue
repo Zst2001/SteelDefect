@@ -1,10 +1,10 @@
 <template>
   <div>
     <header class="head">
-      <p class="eyebrow">主功能</p>
-      <h1>新建快速对比</h1>
+      <p class="eyebrow">缺陷检测</p>
+      <h1>缺陷分割</h1>
       <p>
-        原图请用 <code>images</code> 下的 JPG 钢表面图。掩码用 <code>masks</code> 下的 PNG（看起来接近全黑，是类别索引，不是原图）。文件名主名须一致；全部配对后计算本批参考指标，缺一张则整批不计算精度。
+        同一批图对照内置或已导入模型。原图请用 <code>images</code> 下的 JPG 钢表面图。掩码用 <code>masks</code> 下的 PNG（看起来接近全黑，是类别索引，不是原图）。文件名主名须一致；全部配对后计算本批参考指标，缺一张则整批不计算精度。
       </p>
     </header>
 
@@ -27,7 +27,7 @@
     <el-checkbox-group v-model="selected">
       <el-checkbox v-for="model in builtins" :key="model.id" :label="model.id">
         {{ model.name }}
-        <span class="meta">{{ model.slug }} · {{ model.requires_cuda ? "需要 CUDA" : "CPU" }} · 未测量 FLOPs</span>
+        <span class="meta">{{ model.slug }} · {{ model.requires_cuda ? "需要 CUDA" : "CPU" }} · {{ formatFps(model.fps_per_image) === "未测量" ? "本机 FPS 未测量" : formatFps(model.fps_per_image) }}</span>
       </el-checkbox>
     </el-checkbox-group>
 
@@ -53,7 +53,7 @@ import { computed, onMounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import type { UploadFile } from "element-plus";
 import { formatError, http } from "../../api/http";
-import { modelStatusLabel } from "../../api/labels";
+import { formatFps, modelStatusLabel } from "../../api/labels";
 
 type ModelCard = {
   id: string;
@@ -63,6 +63,7 @@ type ModelCard = {
   status: string;
   requires_cuda: boolean;
   runnable_here?: boolean;
+  fps_per_image?: number | null;
 };
 
 const router = useRouter();

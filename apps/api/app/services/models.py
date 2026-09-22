@@ -1,10 +1,10 @@
 from __future__ import annotations
 
+from infer.spec import NEU_CLASS_MAP, builtin_sort_key
 from sqlalchemy.orm import Session, selectinload
 
 from app.db.models import Model, ModelVersion, PreprocessSpecRow, User
 from app.services.import_model import model_dir, read_report
-from infer.spec import NEU_CLASS_MAP
 
 VIZ_KINDS = ["origin", "pred_color", "overlay", "boundary", "montage"]
 
@@ -64,7 +64,14 @@ def serialize_version(db: Session, version: ModelVersion, model: Model, *, inclu
         "entry_symbol": version.entry_symbol,
         "log_available": False,
         "admit_report": None,
+        "perf": None,
     }
+    from app.services.perf import serialize_perf
+
+    payload["perf"] = serialize_perf(db, version, model)
+    if payload["perf"]["param_count"] is not None:
+        payload["param_count"] = payload["perf"]["param_count"]
+    payload["fps_per_image"] = payload["perf"].get("fps_per_image")
     if include_report and model.source == "student":
         from app.config import get_settings
 
@@ -85,7 +92,13 @@ def list_visible_versions(db: Session, user: User) -> list[dict]:
         model = version.model
         if can_view_version(user, model, version):
             items.append(serialize_version(db, version, model))
-    items.sort(key=lambda row: (0 if row["source"] == "builtin" else 1, row["name"]))
+    items.sort(
+        key=lambda row: (
+            0 if row["source"] == "builtin" else 1,
+            builtin_sort_key(row["slug"]) if row["source"] == "builtin" else 0,
+            row["name"],
+        )
+    )
     return items
 
 

@@ -35,8 +35,19 @@
     <div v-if="currentSample" class="stage">
       <div class="toolbar">
         <span>{{ currentSample.sample_key }}</span>
+        <template v-if="view === 'overlay'">
+          <span class="alpha-label">缺陷透明度</span>
+          <el-slider v-model="defectAlpha" :min="0" :max="100" style="width: 180px" />
+          <span class="alpha-val">{{ defectAlpha }}%</span>
+        </template>
       </div>
-      <img v-if="montageUrl" :src="montageUrl" :alt="currentSample.sample_key" />
+      <OverlayMontage
+        v-if="view === 'overlay' && originUrl && overlayPanels.length"
+        :origin-url="originUrl"
+        :panels="overlayPanels"
+        :alpha="defectAlpha"
+      />
+      <img v-else-if="montageUrl" :src="montageUrl" :alt="currentSample.sample_key" />
     </div>
 
     <div class="pager">
@@ -69,10 +80,11 @@
 import { computed, onMounted, onUnmounted, ref } from "vue";
 import { useRoute } from "vue-router";
 import { ElMessage } from "element-plus";
+import OverlayMontage, { type OverlayPanel } from "../../components/OverlayMontage.vue";
 import { formatError, http } from "../../api/http";
 import { downloadAuthFile, taskStatusLabel } from "../../api/labels";
 
-type Artifact = { kind: string; sample_key: string | null; url: string };
+type Artifact = { kind: string; sample_key: string | null; url: string; model_version_id?: string | null };
 type Sample = { id: string; sample_key: string };
 type Task = {
   id: string;
@@ -94,6 +106,7 @@ const task = ref<Task | null>(null);
 const loadError = ref("");
 const index = ref(0);
 const view = ref<"mask" | "overlay">("mask");
+const defectAlpha = ref(45);
 let timer: number | undefined;
 
 const previewSamples = computed(() => {
@@ -106,13 +119,14 @@ const previewSamples = computed(() => {
 const currentSample = computed(() => previewSamples.value[index.value]);
 const pending = computed(() => ["queued", "running"].includes(task.value?.status ?? ""));
 
-function sampleUrl(kind: string, needle?: string) {
+function sampleUrl(kind: string, needle?: string, modelVersionId?: string | null) {
   const key = currentSample.value?.sample_key;
   if (!key || !task.value) return undefined;
   return task.value.artifacts.find((item) => {
     if (item.sample_key !== key) return false;
     if (item.kind !== kind) return false;
     if (needle && !item.url.includes(needle)) return false;
+    if (modelVersionId && item.model_version_id !== modelVersionId) return false;
     return true;
   })?.url;
 }
@@ -121,6 +135,16 @@ const maskUrl = computed(() => sampleUrl("montage", "__mask"));
 const overlayUrl = computed(() => sampleUrl("montage", "__overlay"));
 const originUrl = computed(() => sampleUrl("origin"));
 const montageUrl = computed(() => (view.value === "overlay" ? overlayUrl.value : maskUrl.value));
+const overlayPanels = computed((): OverlayPanel[] => {
+  const rows: OverlayPanel[] = [{ title: "origin" }];
+  for (const model of task.value?.models ?? []) {
+    if (model.status !== "success") continue;
+    const colorUrl = sampleUrl("pred_color", undefined, model.model_version_id);
+    if (!colorUrl) continue;
+    rows.push({ title: model.name, colorUrl });
+  }
+  return rows;
+});
 const bundleReady = computed(
   () => task.value?.bundle_ready === true || ["success", "partial_success"].includes(task.value?.status ?? ""),
 );
@@ -208,6 +232,11 @@ onUnmounted(() => {
 .stage img {
   max-width: 100%;
   display: block;
+}
+.alpha-label,
+.alpha-val {
+  color: var(--lab-muted);
+  font-size: 13px;
 }
 .toolbar,
 .pager,

@@ -17,12 +17,20 @@
 
     <div class="grid">
       <router-link class="card" to="/compare/new">
-        <h2>快速对比</h2>
-        <p>上传 1–50 张图，可选配对掩码。全部配对后给出本批参考指标（不代表完整测试集）。</p>
+        <h2>缺陷分割</h2>
+        <p>同一批图对照。上传 1–50 张图，可选配对掩码。全部配对后给出本批参考指标（不代表完整测试集）。</p>
       </router-link>
       <router-link class="card" to="/models/import">
         <h2>导入模型</h2>
         <p>单文件 .py + .pth 自动检查。通过后为可运行，失败为不能启动并显示阶段。</p>
+      </router-link>
+      <router-link class="card" to="/models/perf">
+        <h2>模型测评</h2>
+        <p>对学生已导入模型测量参数量与本机 FPS，可选内置 baseline 对照。不是正式评测，不算 mIoU。</p>
+      </router-link>
+      <router-link class="card" to="/models/scatter">
+        <h2>性能散点图</h2>
+        <p>手填横纵坐标与参数量，生成论文风格气泡图。主模型红色，可导出 PNG 或 PDF。</p>
       </router-link>
       <router-link class="card" to="/eval/new">
         <h2>正式评测</h2>
@@ -82,7 +90,7 @@
           </template>
         </el-table-column>
       </el-table>
-      <p v-else class="empty">还没有任务。从快速对比开始。</p>
+      <p v-else class="empty">还没有任务。从缺陷分割开始。</p>
     </section>
 
     <section class="block">

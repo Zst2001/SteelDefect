@@ -61,7 +61,14 @@ def dash_key(user_id: str) -> str:
 
 
 def models_list_key(user_id: str) -> str:
-    return f"lab:models:list:{user_id}:v3"
+    return f"lab:models:list:{user_id}:v4"
+
+
+def invalidate_models_lists() -> None:
+    client = cache_redis()
+    keys = list(client.scan_iter("lab:models:list:*"))
+    if keys:
+        client.delete(*keys)
 
 
 def invalidate_after_write(task_id: str | None = None, user_id: str | None = None) -> None:

@@ -2,8 +2,20 @@
 (it pulls Mamba / Mask2Former and will fail on a CPU website machine).
 """
 
-from .unet import UNet
+from .bisenet import BiSeNet
+from .danet import DANet
 from .deeplabv3_plus import DeepLabV3Plus
+from .pspnet import PSPNet
+from .segformer import SegFormer
+from .unet import UNet
 from .unet_plus_plus import NestedUNet
 
-__all__ = ["UNet", "DeepLabV3Plus", "NestedUNet"]
+__all__ = [
+    "BiSeNet",
+    "DANet",
+    "DeepLabV3Plus",
+    "NestedUNet",
+    "PSPNet",
+    "SegFormer",
+    "UNet",
+]

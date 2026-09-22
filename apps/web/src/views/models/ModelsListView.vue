@@ -1,8 +1,8 @@
 <template>
   <div>
     <header class="head">
-      <p class="eyebrow">模型库</p>
-      <h1>模型中心</h1>
+      <p class="eyebrow">模型中心</p>
+      <h1>模型库</h1>
       <p>内置 baseline 只读。学生模型经自动检查后才能加入对比；不能启动的模型会标明失败阶段。</p>
     </header>
 
@@ -10,7 +10,9 @@
       <router-link to="/models/import">
         <el-button type="primary">导入 .py + .pth</el-button>
       </router-link>
-      <router-link to="/compare/new">去快速对比</router-link>
+      <router-link to="/models/perf">去模型测评</router-link>
+      <router-link to="/models/scatter">性能散点图</router-link>
+      <router-link to="/compare/new">去缺陷分割</router-link>
     </div>
 
     <section class="block">
@@ -22,7 +24,8 @@
           <div class="tags">
             <span>{{ modelStatusLabel(model.status) }}</span>
             <span>{{ model.requires_cuda ? "当前环境不可运行" : "CPU" }}</span>
-            <span>FLOPs 未测量</span>
+            <span>{{ formatParamCount(model.param_count) }}</span>
+            <span>{{ formatFps(model.fps_per_image) }}</span>
           </div>
         </router-link>
       </div>
@@ -56,7 +59,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from "vue";
 import { http } from "../../api/http";
-import { modelStatusLabel } from "../../api/labels";
+import { formatFps, formatParamCount, modelStatusLabel } from "../../api/labels";
 
 type Card = {
   id: string;
@@ -67,19 +70,23 @@ type Card = {
   requires_cuda: boolean;
   fail_stage: string | null;
   fail_message: string | null;
+  param_count?: number | null;
+  fps_per_image?: number | null;
 };
 
 const builtins = ref<Card[]>([]);
 const mine = ref<Card[]>([]);
 const shared = ref<Card[]>([]);
 
-onMounted(async () => {
+async function loadList() {
   const { data } = await http.get("/models");
   const items = (data.items ?? []) as Card[];
   builtins.value = data.builtins ?? items.filter((row) => row.source === "builtin");
   mine.value = data.mine ?? [];
   shared.value = data.shared ?? [];
-});
+}
+
+onMounted(loadList);
 </script>
 
 <style scoped>

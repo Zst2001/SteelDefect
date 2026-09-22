@@ -48,6 +48,39 @@ export function modelStatusLabel(status: string): string {
   return map[status] ?? status;
 }
 
+export function perfStatusLabel(status: string | null | undefined): string {
+  const map: Record<string, string> = {
+    unmeasured: "未测量",
+    queued: "排队中",
+    measuring: "测量中",
+    success: "已完成",
+    failed: "失败",
+  };
+  return map[status ?? ""] ?? status ?? "未测量";
+}
+
+export function formatParamCount(n: number | null | undefined): string {
+  if (n == null) return "未测量";
+  return `${(n / 1_000_000).toFixed(2)} M`;
+}
+
+export function formatBytes(n: number | null | undefined): string {
+  if (n == null) return "未测量";
+  if (n >= 1024 * 1024) return `${(n / (1024 * 1024)).toFixed(1)} MB（${n.toLocaleString("en-US")} B）`;
+  if (n >= 1024) return `${(n / 1024).toFixed(1)} KB（${n.toLocaleString("en-US")} B）`;
+  return `${n} B`;
+}
+
+export function formatLatencyMs(ms: number | null | undefined): string {
+  if (ms == null) return "未测量";
+  return `${ms.toFixed(1)} ms/图`;
+}
+
+export function formatFps(n: number | null | undefined): string {
+  if (n == null) return "未测量";
+  return `${n.toFixed(2)} 图/秒`;
+}
+
 async function messageFromBlob(data: Blob): Promise<string> {
   const text = await data.text();
   try {
@@ -56,6 +89,41 @@ async function messageFromBlob(data: Blob): Promise<string> {
   } catch {
     return text;
   }
+}
+
+export async function fetchAuthBlob(url: string): Promise<Blob> {
+  const path = url.replace(/^\/api/, "");
+  const response = await http.get(path, { responseType: "blob" });
+  const type = String(response.headers["content-type"] ?? "");
+  if (type.includes("application/json")) {
+    throw new Error((await messageFromBlob(response.data as Blob)) || "加载失败");
+  }
+  return response.data as Blob;
+}
+
+export async function postAuthBlob(path: string, body: unknown): Promise<Blob> {
+  try {
+    const response = await http.post(path, body, { responseType: "blob" });
+    const type = String(response.headers["content-type"] ?? "");
+    if (type.includes("application/json")) {
+      throw new Error((await messageFromBlob(response.data as Blob)) || "生成失败");
+    }
+    return response.data as Blob;
+  } catch (error) {
+    if (axios.isAxiosError(error) && error.response?.data instanceof Blob) {
+      throw new Error((await messageFromBlob(error.response.data)) || error.message);
+    }
+    throw error;
+  }
+}
+
+export function saveBlobFile(blob: Blob, filename: string): void {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(url);
 }
 
 export async function downloadAuthFile(path: string, filename: string): Promise<void> {

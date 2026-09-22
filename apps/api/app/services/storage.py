@@ -25,6 +25,15 @@ def resolve_uri(uri: str, settings: Settings) -> Path:
         if root not in path.parents and path != root:
             raise AppError("非法存储路径", code="BAD_URI", stage="file", status_code=400)
         return path
+    if uri.startswith("neufull:"):
+        rel = uri[len("neufull:") :].lstrip("/").replace("\\", "/")
+        if ".." in rel.split("/"):
+            raise AppError("非法全量 NEU 路径", code="BAD_URI", stage="file", status_code=400)
+        root = settings.neu_full_path.resolve()
+        path = (root / rel).resolve()
+        if root not in path.parents and path != root:
+            raise AppError("非法全量 NEU 路径", code="BAD_URI", stage="file", status_code=400)
+        return path
     raise AppError("未知资源协议", code="BAD_URI", stage="file", status_code=400)
 
 

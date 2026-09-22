@@ -31,6 +31,7 @@ class Settings(BaseSettings):
     seed_student_password: str = "StudentDev!234"
     max_upload_images: int = 50
     max_image_bytes: int = 20 * 1024 * 1024
+    neu_full_root: str = "assets/datasets/neu"
     compare_job_timeout_sec: int = 7200
     eval_job_timeout_sec: int = 7200
     demo_job_timeout_sec: int = 7200
@@ -50,7 +51,17 @@ class Settings(BaseSettings):
     max_pth_bytes: int = 512 * 1024 * 1024
     admit_job_timeout_sec: int = 600
     student_infer_timeout_sec: int = 900
+    perf_job_timeout_sec: int = 600
     student_image: str = "steel-lab-student:cpu"
+    llm_api_key: str = ""
+    dashscope_api_key: str = ""
+    llm_base_url: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    llm_model: str = "qwen3.8-max"
+    llm_timeout_sec: float = 20
+
+    @property
+    def resolved_llm_api_key(self) -> str:
+        return (self.llm_api_key or self.dashscope_api_key).strip()
 
     @property
     def repo_root(self) -> Path:
@@ -59,6 +70,13 @@ class Settings(BaseSettings):
     @property
     def storage_path(self) -> Path:
         path = Path(self.storage_root)
+        if not path.is_absolute():
+            path = self.repo_root / path
+        return path
+
+    @property
+    def neu_full_path(self) -> Path:
+        path = Path(self.neu_full_root)
         if not path.is_absolute():
             path = self.repo_root / path
         return path

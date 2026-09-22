@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, File, Form, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session, selectinload
 
@@ -11,8 +11,16 @@ from app.config import get_settings
 from app.db.models import Model, ModelVersion, User
 from app.deps import get_db
 from app.errors import AppError
+from app.services.adapt import apply_adapt, build_proposal
 from app.services.import_model import import_student_model, model_dir
-from app.services.models import can_view_version, group_model_items, list_visible_versions, serialize_version
+from app.services.models import (
+    can_view_version,
+    group_model_items,
+    list_visible_versions,
+    serialize_version,
+)
+from app.services.perf import request_measure, serialize_perf
+from app.services.scatter import render_scatter
 
 router = APIRouter(prefix="/models", tags=["models"])
 
@@ -89,6 +97,50 @@ class VisibilityIn(BaseModel):
     visibility: str = Field(pattern="^(private|shared)$")
 
 
+class AdaptIn(BaseModel):
+    consent: bool
+
+
+class ScatterPointIn(BaseModel):
+    name: str = Field(min_length=1, max_length=64)
+    x: float
+    y: float
+    params: float | None = None
+    is_main: bool = False
+
+
+class ScatterIn(BaseModel):
+    title: str = Field(default="Network Performance Comparison", max_length=160)
+    xlabel: str = Field(default="FPS", max_length=64)
+    ylabel: str = Field(default="mIoU (%)", max_length=64)
+    default_marker_mm: float = Field(default=5, ge=1, le=30)
+    fmt: str = Field(default="png", pattern="^(png|pdf)$")
+    points: list[ScatterPointIn] = Field(min_length=1, max_length=20)
+
+
+@router.post("/scatter")
+def post_scatter(body: ScatterIn, user: User = Depends(get_current_user)) -> Response:
+    del user
+    try:
+        payload = render_scatter(
+            title=body.title,
+            xlabel=body.xlabel,
+            ylabel=body.ylabel,
+            default_marker_mm=body.default_marker_mm,
+            fmt=body.fmt,
+            points=[item.model_dump() for item in body.points],
+        )
+    except (TypeError, ValueError) as exc:
+        raise AppError(str(exc), code="BAD_SCATTER", stage="file", status_code=400) from exc
+    media = "application/pdf" if body.fmt == "pdf" else "image/png"
+    filename = f"perf_scatter.{body.fmt}"
+    return Response(
+        content=payload,
+        media_type=media,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
 @router.patch("/{version_id}/visibility")
 def set_visibility(
     version_id: str,
@@ -119,6 +171,43 @@ def download_admit_log(
     if not path.is_file():
         raise AppError("还没有检查日志", code="LOG_MISSING", stage="file", status_code=404)
     return FileResponse(path, filename=f"{version.id}_admit.log", media_type="text/plain")
+
+
+@router.get("/{version_id}/adapt")
+def get_adapt_proposal(
+    version_id: str,
+    llm: bool = True,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> dict:
+    """`llm=false` returns the rule-only diagnosis immediately; the page renders it first."""
+    version = _visible_version(db, version_id, user)
+    return build_proposal(db, user, version, version.model, use_llm=llm)
+
+
+@router.post("/{version_id}/adapt")
+def post_adapt(
+    version_id: str,
+    body: AdaptIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> dict:
+    version = _visible_version(db, version_id, user)
+    return apply_adapt(db, user, version, version.model, consent=body.consent)
+
+
+@router.get("/{version_id}/perf")
+def get_perf(version_id: str, db: Session = Depends(get_db), user: User = Depends(get_current_user)) -> dict:
+    version = _visible_version(db, version_id, user)
+    return serialize_perf(db, version, version.model)
+
+
+@router.post("/{version_id}/perf")
+def post_perf(version_id: str, db: Session = Depends(get_db), user: User = Depends(get_current_user)) -> dict:
+    version = _visible_version(db, version_id, user)
+    request_measure(db, version, version.model)
+    db.refresh(version)
+    return serialize_version(db, version, version.model, include_report=True)
 
 
 @router.get("/{version_id}")

@@ -16,6 +16,11 @@ from app.db.models import ModelVersion, Weight
 from app.services.import_model import model_dir, write_report
 
 
+def _admit_code_dir(settings: Settings) -> Path | None:
+    path = settings.repo_root / "packages" / "admit"
+    return path if path.is_dir() else None
+
+
 def _link_or_copy(src: Path, dst: Path) -> None:
     dst.parent.mkdir(parents=True, exist_ok=True)
     if dst.exists():
@@ -78,6 +83,7 @@ def admit_version(db: Session, version: ModelVersion, settings: Settings) -> Non
             out_dir=out_dir,
             timeout_sec=min(settings.admit_job_timeout_sec, 300),
             extra_paths=[root, settings.storage_path, settings.repo_root],
+            code_dir=_admit_code_dir(settings),
         )
     except DockerUnavailable as exc:
         message = str(exc)
@@ -149,6 +155,7 @@ def infer_student_masks(
         out_dir=out_dir,
         timeout_sec=min(settings.student_infer_timeout_sec, 60 + 8 * max(len(keys), 1)),
         extra_paths=[work, settings.storage_path],
+        code_dir=_admit_code_dir(settings),
     )
     if not payload.get("ok"):
         stage = str(payload.get("fail_stage") or "forward")
@@ -160,6 +167,46 @@ def infer_student_masks(
             raise RuntimeError(f"shape:缺少 {key} 的预测")
         preds[key] = np.load(path)
     return preds
+
+
+def measure_student_version(db: Session, version: ModelVersion, settings: Settings) -> dict:
+    root = model_dir(settings, version.id)
+    work = settings.storage_path / "perf" / version.id
+    in_dir = work / "in"
+    out_dir = work / "out"
+    if in_dir.exists():
+        shutil.rmtree(in_dir, ignore_errors=True)
+    if out_dir.exists():
+        shutil.rmtree(out_dir, ignore_errors=True)
+    in_dir.mkdir(parents=True, exist_ok=True)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    _link_or_copy(root / "model.py", in_dir / "model.py")
+    _link_or_copy(root / "weights.pth", in_dir / "weights.pth")
+    manifest = {
+        "mode": "perf",
+        "source_name": "model.py",
+        "weight_name": "weights.pth",
+        "entry_symbol": version.entry_symbol or "build_model",
+        "num_classes": version.num_classes,
+        "in_channels": version.in_channels,
+        "input_h": version.input_h,
+        "input_w": version.input_w,
+    }
+    (in_dir / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+    payload = run_student_container(
+        image=settings.student_image,
+        mode="perf",
+        in_dir=in_dir,
+        out_dir=out_dir,
+        timeout_sec=min(settings.perf_job_timeout_sec, 300),
+        extra_paths=[root, work, settings.storage_path, settings.repo_root],
+        code_dir=_admit_code_dir(settings),
+    )
+    if not payload.get("ok"):
+        stage = str(payload.get("fail_stage") or "resource")
+        message = str(payload.get("message") or "隔离测量失败")
+        raise RuntimeError(f"{stage}:{message}")
+    return payload
 
 
 def _mark(

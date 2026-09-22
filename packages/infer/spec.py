@@ -20,7 +20,7 @@ class PreprocessSpec:
         return asdict(self)
 
     @classmethod
-    def from_mapping(cls, data: dict[str, Any] | None) -> "PreprocessSpec":
+    def from_mapping(cls, data: dict[str, Any] | None) -> PreprocessSpec:
         if not data:
             return cls()
         return cls(
@@ -40,8 +40,20 @@ class PreprocessSpec:
 
 NEU_DEFAULT = PreprocessSpec()
 
-BUILTIN_SLUGS = ("unet", "deeplabv3", "unetpp")
+# 模型中心 / 对比 / 评测 / 公开演示共用的 CPU 内置 baseline。
+# 演示与快速对比每次仍只可选 1–3 个；正式评测可全选当前内置集合。学生模型永远不进 F-DEMO。
+BUILTIN_SLUGS = (
+    "unet",
+    "deeplabv3",
+    "unetpp",
+    "bisenet",
+    "danet",
+    "pspnet",
+    "segformer",
+)
 DEMO_MODEL_SLUGS = BUILTIN_SLUGS
+COMPARE_BASELINE_LIMIT = 3
+EVAL_BASELINE_LIMIT = len(BUILTIN_SLUGS)
 DEMO_CATALOG_KIND = "demo_samples"
 DEMO_DISCLAIMER = "公开演示 / 预备样例 / 不代表测试集性能"
 
@@ -49,13 +61,30 @@ BUILTIN_DISPLAY_NAMES = {
     "unet": "UNet",
     "deeplabv3": "DeepLabV3+",
     "unetpp": "UNet++",
+    "bisenet": "BiSeNet",
+    "danet": "DANet",
+    "pspnet": "PSPNet",
+    "segformer": "SegFormer",
 }
 
 BUILTIN_WEIGHT_FILES = {
     "unet": "baselines/neu/best_unet.pth",
     "deeplabv3": "baselines/neu/best_deeplabv3.pth",
     "unetpp": "baselines/neu/best_unetpp.pth",
+    "bisenet": "baselines/neu/best_bisenet.pth",
+    "danet": "baselines/neu/best_danet.pth",
+    "pspnet": "baselines/neu/best_pspnet.pth",
+    "segformer": "baselines/neu/best_segformer.pth",
 }
+
+
+def builtin_sort_key(slug: str) -> int:
+    """Keep UNet / DeepLabV3+ / UNet++ first so compare/eval default 1–3 stay unchanged."""
+    try:
+        return BUILTIN_SLUGS.index(slug)
+    except ValueError:
+        return len(BUILTIN_SLUGS)
+
 
 NEU_CLASS_MAP = {
     "0": "背景",

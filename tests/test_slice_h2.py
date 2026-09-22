@@ -155,6 +155,7 @@ def test_demo_models_only_cpu_builtin_whitelist(db: Session) -> None:
         ("unet", "UNet", "builtin", False, "runnable"),
         ("deeplabv3", "DeepLabV3+", "builtin", True, "runnable"),
         ("unetpp", "UNet++", "builtin", False, "cannot_start"),
+        ("bisenet", "BiSeNet", "builtin", False, "runnable"),
         ("unet", "学生UNet", "student", False, "runnable"),
     ]
     for slug, name, source, cuda, status in specs:
@@ -181,10 +182,18 @@ def test_demo_models_only_cpu_builtin_whitelist(db: Session) -> None:
     payload = list_demo_models(db)
     assert payload["disclaimer"] == DEMO_DISCLAIMER
     slugs = [row["slug"] for row in payload["items"]]
-    assert slugs == ["unet"]
+    assert slugs == ["unet", "bisenet"]
     assert all(row["source"] == "builtin" for row in payload["items"])
     assert catalog_has_no_gt_fields(payload)
-    assert set(DEMO_MODEL_SLUGS) == {"unet", "deeplabv3", "unetpp"}
+    assert set(DEMO_MODEL_SLUGS) == {
+        "unet",
+        "deeplabv3",
+        "unetpp",
+        "bisenet",
+        "danet",
+        "pspnet",
+        "segformer",
+    }
 
 
 def test_demo_http_handlers_are_public_and_omit_gt(db: Session) -> None:

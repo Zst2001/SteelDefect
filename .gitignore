@@ -21,3 +21,10 @@ Thumbs.db
 # Local payloads and files over GitHub's 100MB limit
 *.tar.gz
 assets/baselines/neu/best_deeplabv3.pth
+assets/baselines/neu/best_pspnet.pth
+
+# Full NEU corpus is seeded from disk; do not commit the image files.
+assets/datasets/neu/images/*
+!assets/datasets/neu/images/.gitkeep
+assets/datasets/neu/masks/*
+!assets/datasets/neu/masks/.gitkeep

@@ -8,18 +8,38 @@
           <div class="sub">工业缺陷分割 · CPU</div>
         </div>
       </router-link>
-      <el-menu :router="true" :default-active="active" background-color="#1c232b" text-color="#ece7dc" active-text-color="#d9a441">
+      <el-menu
+        :router="true"
+        :default-active="active"
+        :default-openeds="openedMenus"
+        :key="openedMenus.join('|') || 'root'"
+        background-color="#1c232b"
+        text-color="#ece7dc"
+        active-text-color="#d9a441"
+      >
         <el-menu-item index="/">首页</el-menu-item>
         <el-menu-item index="/demo">公开演示</el-menu-item>
         <el-menu-item index="/workbench">工作台</el-menu-item>
-        <el-menu-item index="/compare/new">快速对比</el-menu-item>
+        <el-sub-menu index="defect">
+          <template #title>缺陷检测</template>
+          <el-menu-item index="/compare/new">缺陷分割</el-menu-item>
+          <el-menu-item index="/eval/new">正式评测</el-menu-item>
+          <el-menu-item index="/detection">目标检测</el-menu-item>
+          <el-menu-item index="/classification">缺陷分类</el-menu-item>
+        </el-sub-menu>
         <el-menu-item index="/datasets">数据集</el-menu-item>
-        <el-menu-item index="/models">模型中心</el-menu-item>
-        <el-menu-item index="/eval/new">正式评测</el-menu-item>
+        <el-sub-menu
+          index="models"
+          class="models-hub"
+          :class="{ 'hub-current': modelsHubActive }"
+        >
+          <template #title>模型中心</template>
+          <el-menu-item index="/models/import">导入模型</el-menu-item>
+          <el-menu-item index="/models/perf">模型测评</el-menu-item>
+          <el-menu-item index="/models/scatter">性能散点图</el-menu-item>
+        </el-sub-menu>
         <el-menu-item index="/records">结果记录</el-menu-item>
         <el-menu-item index="/assistant">科研助手</el-menu-item>
-        <el-menu-item index="/detection">目标检测</el-menu-item>
-        <el-menu-item index="/classification">缺陷分类</el-menu-item>
         <el-menu-item v-if="signedIn && role === 'advisor'" index="/admin">系统管理</el-menu-item>
       </el-menu>
       <div class="account" v-if="signedIn">
@@ -40,7 +60,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { http } from "../api/http";
 
@@ -52,6 +72,9 @@ const username = ref("");
 
 const active = computed(() => {
   if (route.path.startsWith("/demo")) return "/demo";
+  if (route.path.startsWith("/models/import")) return "/models/import";
+  if (route.path.startsWith("/models/perf")) return "/models/perf";
+  if (route.path.startsWith("/models/scatter")) return "/models/scatter";
   if (route.path.startsWith("/models")) return "/models";
   if (route.path.startsWith("/compare")) return "/compare/new";
   if (route.path.startsWith("/datasets")) return "/datasets";
@@ -59,7 +82,64 @@ const active = computed(() => {
   return route.path;
 });
 
+const modelsHubActive = computed(
+  () =>
+    route.path.startsWith("/models") &&
+    !route.path.startsWith("/models/import") &&
+    !route.path.startsWith("/models/perf") &&
+    !route.path.startsWith("/models/scatter"),
+);
+
+function isModelHubPath(path: string) {
+  return path === "/models" || path === "/models/";
+}
+
+function onModelHubTitleClick(event: Event) {
+  if ((event.target as HTMLElement | null)?.closest(".el-menu-item")) return;
+  if (isModelHubPath(route.path)) return;
+  event.preventDefault();
+  event.stopImmediatePropagation();
+  void router.push("/models");
+}
+
+let modelsTitleEl: HTMLElement | null = null;
+
+function unbindModelHubTitle() {
+  modelsTitleEl?.removeEventListener("click", onModelHubTitleClick, true);
+  modelsTitleEl = null;
+}
+
+function bindModelHubTitle() {
+  unbindModelHubTitle();
+  const hub = document.querySelector(".el-sub-menu.models-hub");
+  if (!(hub instanceof HTMLElement)) return;
+  hub.addEventListener("click", onModelHubTitleClick, true);
+  modelsTitleEl = hub;
+}
+
+const openedMenus = computed(() => {
+  const item = active.value;
+  if (
+    item === "/compare/new" ||
+    item === "/eval/new" ||
+    item === "/detection" ||
+    item === "/classification"
+  ) {
+    return ["defect"];
+  }
+  if (
+    item === "/models" ||
+    item === "/models/import" ||
+    item === "/models/perf" ||
+    item === "/models/scatter"
+  ) {
+    return ["models"];
+  }
+  return [];
+});
+
 onMounted(async () => {
+  void nextTick(bindModelHubTitle);
   try {
     const { data } = await http.get("/auth/me");
     signedIn.value = true;
@@ -69,6 +149,15 @@ onMounted(async () => {
     signedIn.value = false;
   }
 });
+
+watch(
+  () => route.fullPath,
+  () => {
+    void nextTick(bindModelHubTitle);
+  },
+);
+
+onBeforeUnmount(unbindModelHubTitle);
 
 async function logout() {
   try {
@@ -146,7 +235,21 @@ async function logout() {
   color: var(--lab-text);
   border-color: var(--lab-accent);
 }
-:deep(.el-menu) {
-  border-right: none;
+:deep(.el-sub-menu.models-hub > .el-sub-menu__title) {
+  cursor: pointer;
+}
+:deep(.el-sub-menu .el-menu) {
+  background-color: #1c232b !important;
+}
+:deep(.el-sub-menu__title) {
+  color: #ece7dc !important;
+}
+:deep(.el-sub-menu__title:hover) {
+  background-color: transparent !important;
+  color: var(--lab-text) !important;
+}
+:deep(.el-sub-menu.is-active > .el-sub-menu__title),
+:deep(.el-sub-menu.hub-current > .el-sub-menu__title) {
+  color: var(--lab-accent-2) !important;
 }
 </style>

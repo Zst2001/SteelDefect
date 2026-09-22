@@ -1,5 +1,18 @@
 from __future__ import annotations
 
+from infer.spec import (
+    BATCH_REFERENCE_DISCLAIMER,
+    BUILTIN_DISPLAY_NAMES,
+    COMPARE_BASELINE_LIMIT,
+    DEMO_CATALOG_KIND,
+    ERROR_LEGEND,
+    EVAL_BASELINE_LIMIT,
+    NEU_LEGEND,
+    OFFICIAL_SPLIT_DISCLAIMER,
+    OFFICIAL_SPLIT_SCOPE,
+)
+from infer.task_io import metrics_response
+from rq import Queue
 from sqlalchemy.orm import Session, selectinload
 
 from app.cache import invalidate_after_write, rq_connection
@@ -17,17 +30,6 @@ from app.db.models import (
 )
 from app.errors import AppError
 from app.util_time import new_id, utcnow
-from infer.spec import (
-    BATCH_REFERENCE_DISCLAIMER,
-    BUILTIN_DISPLAY_NAMES,
-    DEMO_CATALOG_KIND,
-    ERROR_LEGEND,
-    NEU_LEGEND,
-    OFFICIAL_SPLIT_DISCLAIMER,
-    OFFICIAL_SPLIT_SCOPE,
-)
-from infer.task_io import metrics_response
-from rq import Queue
 
 TASK_TYPE_LABELS = {
     "compare": "快速对比",
@@ -57,6 +59,18 @@ def get_visible_task(db: Session, task_id: str, user: User) -> Task:
     return task
 
 
+def _assert_baseline_count(baseline_version_ids: list[str], *, max_baselines: int) -> None:
+    if not 1 <= len(baseline_version_ids) <= max_baselines:
+        raise AppError(
+            f"请选择 1–{max_baselines} 个内置 baseline",
+            code="BASELINE_COUNT",
+            stage="protocol",
+            status_code=400,
+        )
+    if len(set(baseline_version_ids)) != len(baseline_version_ids):
+        raise AppError("baseline 不能重复", code="DUP_BASELINE", stage="protocol", status_code=400)
+
+
 def _resolve_runnable_models(
     db: Session,
     user: User,
@@ -64,11 +78,9 @@ def _resolve_runnable_models(
     baseline_version_ids: list[str],
     student_version_id: str | None,
     version: DatasetVersion,
+    max_baselines: int = COMPARE_BASELINE_LIMIT,
 ) -> tuple[list[ModelVersion], ModelVersion | None]:
-    if not 1 <= len(baseline_version_ids) <= 3:
-        raise AppError("请选择 1–3 个内置 baseline", code="BASELINE_COUNT", stage="protocol", status_code=400)
-    if len(set(baseline_version_ids)) != len(baseline_version_ids):
-        raise AppError("baseline 不能重复", code="DUP_BASELINE", stage="protocol", status_code=400)
+    _assert_baseline_count(baseline_version_ids, max_baselines=max_baselines)
 
     baselines = []
     for vid in baseline_version_ids:
@@ -284,6 +296,7 @@ def create_eval_task(
         baseline_version_ids=baseline_version_ids,
         student_version_id=student_version_id,
         version=version,
+        max_baselines=EVAL_BASELINE_LIMIT,
     )
     task = Task(
         id=new_id(),

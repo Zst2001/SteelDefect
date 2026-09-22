@@ -9,7 +9,7 @@ import numpy as np
 from sqlalchemy.orm import Session
 
 from app.bootstrap import ROOT  # noqa: F401
-from app.cache import invalidate_after_write
+from app.cache import invalidate_after_write, invalidate_models_lists
 from app.config import get_settings
 from app.db.models import (
     Artifact,
@@ -44,7 +44,7 @@ from infer.spec import (
 from infer.task_io import prepare_task_dirs, select_preview_keys, write_json, write_task_json
 from infer.viz import align_mask, boundary_bgr, colorize_bgr, error_map_bgr, overlay_rgb, save_bgr_png, save_rgb_png
 
-from apps.worker.student_exec import admit_version, infer_student_masks
+from apps.worker.student_exec import admit_version, infer_student_masks, measure_student_version
 
 BUNDLE_FOLDERS = ("origin", "gt", "pred", "overlay", "boundary", "error", "montage")
 
@@ -497,6 +497,64 @@ def run_admit(version_id: str) -> None:
             db.commit()
             model = db.get(Model, version.model_id)
             invalidate_after_write(None, model.owner_id if model else None)
+        raise
+    finally:
+        db.close()
+
+
+def run_perf(version_id: str) -> None:
+    settings = get_settings()
+    db = SessionLocal()
+    try:
+        from app.services.perf import apply_measure_result, get_or_create_profile, mark_measure_failed
+        from infer.perf import measure_builtin
+
+        version = db.get(ModelVersion, version_id)
+        if version is None:
+            return
+        model = db.get(Model, version.model_id)
+        if model is None:
+            return
+        profile = get_or_create_profile(db, version)
+        profile.status = "measuring"
+        db.commit()
+        invalidate_models_lists()
+        if version.status != "runnable" or version.requires_cuda:
+            mark_measure_failed(db, version, model, "只有当前环境可运行的版本才能测量。")
+            db.commit()
+            invalidate_models_lists()
+            return
+        if model.source == "student":
+            payload = measure_student_version(db, version, settings)
+        else:
+            weight = db.query(Weight).filter(Weight.version_id == version.id).first()
+            if weight is None:
+                raise RuntimeError("缺少权重记录")
+            weight_path = resolve_uri(weight.file_uri, settings)
+            payload = measure_builtin(
+                version_id=version.id,
+                slug=version.slug,
+                weight_path=weight_path,
+                num_classes=version.num_classes,
+                in_channels=version.in_channels,
+                height=version.input_h,
+                width=version.input_w,
+            )
+        apply_measure_result(db, version, model, payload, settings=settings)
+        db.commit()
+        invalidate_models_lists()
+        invalidate_after_write(None, model.owner_id)
+    except Exception as exc:
+        db.rollback()
+        version = db.get(ModelVersion, version_id)
+        model = db.get(Model, version.model_id) if version is not None else None
+        if version is not None and model is not None:
+            from app.services.perf import mark_measure_failed
+
+            mark_measure_failed(db, version, model, str(exc))
+            db.commit()
+            invalidate_models_lists()
+            invalidate_after_write(None, model.owner_id)
         raise
     finally:
         db.close()

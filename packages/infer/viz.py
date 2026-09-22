@@ -42,10 +42,15 @@ def colorize_bgr(mask: np.ndarray, dataset: str = "neu", num_classes: int = 4) -
 
 
 def overlay_rgb(origin_rgb: np.ndarray, mask_aligned: np.ndarray, alpha: float = 0.45) -> np.ndarray:
+    """Blend class colors onto the origin only where the mask is a defect (class > 0)."""
     color_bgr = colorize_bgr(mask_aligned)
     color_rgb = cv2.cvtColor(color_bgr, cv2.COLOR_BGR2RGB)
-    blended = (1.0 - alpha) * origin_rgb.astype(np.float32) + alpha * color_rgb.astype(np.float32)
-    return np.clip(blended, 0, 255).astype(np.uint8)
+    out = origin_rgb.astype(np.float32)
+    defect = mask_aligned > 0
+    if not np.any(defect):
+        return origin_rgb.copy()
+    out[defect] = (1.0 - alpha) * out[defect] + alpha * color_rgb[defect].astype(np.float32)
+    return np.clip(out, 0, 255).astype(np.uint8)
 
 
 def error_map_bgr(pred: np.ndarray, gt: np.ndarray) -> np.ndarray:

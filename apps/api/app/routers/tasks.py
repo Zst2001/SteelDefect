@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-from pathlib import Path
-
 from fastapi import APIRouter, Depends
 from fastapi.responses import FileResponse
+from infer.spec import COMPARE_BASELINE_LIMIT, EVAL_BASELINE_LIMIT
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -27,13 +26,13 @@ router = APIRouter(prefix="/tasks", tags=["tasks"])
 
 class CompareIn(BaseModel):
     batch_id: str
-    baseline_version_ids: list[str] = Field(min_length=1, max_length=3)
+    baseline_version_ids: list[str] = Field(min_length=1, max_length=COMPARE_BASELINE_LIMIT)
     student_version_id: str | None = None
 
 
 class EvalIn(BaseModel):
     dataset_version_id: str
-    baseline_version_ids: list[str] = Field(min_length=1, max_length=3)
+    baseline_version_ids: list[str] = Field(min_length=1, max_length=EVAL_BASELINE_LIMIT)
     student_version_id: str | None = None
 
 

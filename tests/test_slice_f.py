@@ -10,13 +10,27 @@ sys.path[:0] = [str(ROOT), str(ROOT / "packages"), str(ROOT / "third_party"), st
 
 import numpy as np
 import pytest
-
 from app.errors import AppError
 from app.routers.datasets import summarize_dataset_version
 from app.services.dashboard import _task_payload
-from app.services.tasks import assert_eval_samples, assert_eval_version, serialize_metrics
-from infer.metrics import add_to_confmat, build_metric_payload, empty_confmat, metrics_dict_from_confmat
-from infer.spec import OFFICIAL_SPLIT_DISCLAIMER, OFFICIAL_SPLIT_SCOPE
+from app.services.tasks import (
+    _assert_baseline_count,
+    assert_eval_samples,
+    assert_eval_version,
+    serialize_metrics,
+)
+from infer.metrics import (
+    add_to_confmat,
+    build_metric_payload,
+    empty_confmat,
+    metrics_dict_from_confmat,
+)
+from infer.spec import (
+    COMPARE_BASELINE_LIMIT,
+    EVAL_BASELINE_LIMIT,
+    OFFICIAL_SPLIT_DISCLAIMER,
+    OFFICIAL_SPLIT_SCOPE,
+)
 from infer.task_io import select_preview_keys
 
 
@@ -25,6 +39,20 @@ def test_preview_keys_are_sorted_first_n() -> None:
     assert select_preview_keys(keys, 8) == [f"{i:06d}" for i in range(1, 9)]
     assert select_preview_keys(keys, 0) == [f"{i:06d}" for i in range(1, 21)]
     assert select_preview_keys(["a", "b"], 8) == ["a", "b"]
+
+
+def test_eval_allows_all_builtins_compare_still_caps_at_three() -> None:
+    ids = [f"m{i}" for i in range(EVAL_BASELINE_LIMIT)]
+    _assert_baseline_count(ids, max_baselines=EVAL_BASELINE_LIMIT)
+    with pytest.raises(AppError) as too_many:
+        _assert_baseline_count(ids, max_baselines=COMPARE_BASELINE_LIMIT)
+    assert too_many.value.code == "BASELINE_COUNT"
+    with pytest.raises(AppError) as empty:
+        _assert_baseline_count([], max_baselines=EVAL_BASELINE_LIMIT)
+    assert empty.value.code == "BASELINE_COUNT"
+    with pytest.raises(AppError) as dup:
+        _assert_baseline_count(["a", "a"], max_baselines=EVAL_BASELINE_LIMIT)
+    assert dup.value.code == "DUP_BASELINE"
 
 
 def test_eval_rejects_upload_batch_and_missing_gt() -> None:

@@ -60,6 +60,7 @@ def run_student_container(
     memory: str = "4g",
     cpus: str = "2",
     extra_paths: list[Path] | None = None,
+    code_dir: Path | None = None,
 ) -> dict[str, Any]:
     if not docker_available():
         raise DockerUnavailable("当前环境未检测到可用的 Docker，无法隔离检查学生模型。")
@@ -91,13 +92,19 @@ def run_student_container(
         f"{_volume_path(in_dir)}:/in:ro",
         "-v",
         f"{_volume_path(out_dir)}:/out",
-        image,
-        mode,
-        "--in",
-        "/in",
-        "--out",
-        "/out",
     ]
+    if code_dir is not None and code_dir.is_dir():
+        cmd.extend(["-v", f"{_volume_path(code_dir)}:/opt/lab/admit:ro"])
+    cmd.extend(
+        [
+            image,
+            mode,
+            "--in",
+            "/in",
+            "--out",
+            "/out",
+        ]
+    )
     try:
         proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout_sec, check=False)
     except subprocess.TimeoutExpired as exc:

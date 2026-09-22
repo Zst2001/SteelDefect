@@ -3,6 +3,14 @@ from __future__ import annotations
 import hashlib
 from pathlib import Path
 
+from infer.spec import (
+    BUILTIN_DISPLAY_NAMES,
+    BUILTIN_SLUGS,
+    BUILTIN_WEIGHT_FILES,
+    DEMO_CATALOG_KIND,
+    NEU_CLASS_MAP,
+    NEU_DEFAULT,
+)
 from sqlalchemy.orm import Session
 
 from app.config import Settings
@@ -17,16 +25,21 @@ from app.db.models import (
     Weight,
 )
 from app.security import hash_password
+from app.services.catalog import seed_catalog
 from app.util_time import new_id
 
-from infer.spec import (
-    BUILTIN_DISPLAY_NAMES,
-    BUILTIN_SLUGS,
-    BUILTIN_WEIGHT_FILES,
-    DEMO_CATALOG_KIND,
-    NEU_CLASS_MAP,
-    NEU_DEFAULT,
-)
+IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff"}
+MASK_EXTS = (".png", ".bmp", ".jpg", ".jpeg", ".tif", ".tiff")
+
+
+def _invalidate_model_lists() -> None:
+    """Seed can add builtins after the 10-minute models list cache was filled."""
+    from app.cache import cache_redis
+
+    client = cache_redis()
+    keys = list(client.scan_iter("lab:models:list:*"))
+    if keys:
+        client.delete(*keys)
 
 
 def _ensure_user(db: Session, username: str, password: str, role: str) -> User:
@@ -74,6 +87,110 @@ def _file_sha256(path: Path) -> str:
                 break
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def _uri_for_image(path: Path, settings: Settings) -> str:
+    resolved = path.resolve()
+    assets = (settings.repo_root / "assets").resolve()
+    try:
+        rel = resolved.relative_to(assets)
+        return "asset:" + rel.as_posix()
+    except ValueError:
+        rel = resolved.relative_to(settings.neu_full_path.resolve())
+        return "neufull:" + rel.as_posix()
+
+
+def _find_mask(masks_dir: Path, key: str) -> Path | None:
+    if not masks_dir.is_dir():
+        return None
+    for ext in MASK_EXTS:
+        candidate = masks_dir / f"{key}{ext}"
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def _ingest_folder_samples(
+    db: Session,
+    version: DatasetVersion,
+    images_dir: Path,
+    masks_dir: Path,
+    settings: Settings,
+) -> int:
+    if not images_dir.is_dir():
+        return 0
+    import cv2
+
+    existing = {
+        row.sample_key for row in db.query(Sample).filter(Sample.version_id == version.id).all()
+    }
+    added = 0
+    for image_path in sorted(p for p in images_dir.iterdir() if p.suffix.lower() in IMAGE_EXTS):
+        key = image_path.stem
+        if key in existing:
+            continue
+        bgr = cv2.imread(str(image_path), cv2.IMREAD_COLOR)
+        if bgr is None:
+            continue
+        height, width = bgr.shape[:2]
+        mask_path = _find_mask(masks_dir, key)
+        mask_uri = _uri_for_image(mask_path, settings) if mask_path is not None else None
+        db.add(
+            Sample(
+                id=new_id(),
+                version_id=version.id,
+                sample_key=key,
+                origin_uri=_uri_for_image(image_path, settings),
+                mask_uri=mask_uri,
+                width=width,
+                height=height,
+                sha256=_file_sha256(image_path),
+            )
+        )
+        existing.add(key)
+        added += 1
+    return added
+
+
+def _ensure_preset_dataset(db: Session, name: str) -> Dataset:
+    dataset = db.query(Dataset).filter(Dataset.name == name, Dataset.visibility == "preset").one_or_none()
+    if dataset is None:
+        dataset = Dataset(id=new_id(), owner_id=None, name=name, visibility="preset")
+        db.add(dataset)
+        db.flush()
+    return dataset
+
+
+def _ensure_preset_version(
+    db: Session,
+    dataset: Dataset,
+    preprocess: PreprocessSpecRow,
+    *,
+    is_fixed_test: bool,
+    forbid_student_gt_download: bool,
+) -> DatasetVersion:
+    version = (
+        db.query(DatasetVersion)
+        .filter(DatasetVersion.dataset_id == dataset.id, DatasetVersion.kind == "preset")
+        .one_or_none()
+    )
+    if version is None:
+        version = DatasetVersion(
+            id=new_id(),
+            dataset_id=dataset.id,
+            kind="preset",
+            class_map_json=NEU_CLASS_MAP,
+            preprocess_id=preprocess.id,
+            is_fixed_test=is_fixed_test,
+            forbid_student_gt_download=forbid_student_gt_download,
+        )
+        db.add(version)
+        db.flush()
+        return version
+    version.is_fixed_test = is_fixed_test
+    version.forbid_student_gt_download = forbid_student_gt_download
+    version.class_map_json = version.class_map_json or NEU_CLASS_MAP
+    return version
 
 
 def seed_all(db: Session, settings: Settings) -> None:
@@ -136,72 +253,43 @@ def seed_all(db: Session, settings: Settings) -> None:
                 )
             )
 
-    dataset = db.query(Dataset).filter(Dataset.name == "NEU-20", Dataset.visibility == "preset").one_or_none()
-    if dataset is None:
-        dataset = Dataset(id=new_id(), owner_id=None, name="NEU-20", visibility="preset")
-        db.add(dataset)
-        db.flush()
-    version = (
-        db.query(DatasetVersion)
-        .filter(DatasetVersion.dataset_id == dataset.id, DatasetVersion.kind == "preset")
-        .one_or_none()
+    neu20 = _ensure_preset_dataset(db, "NEU-20")
+    neu20_version = _ensure_preset_version(
+        db,
+        neu20,
+        preprocess,
+        is_fixed_test=True,
+        forbid_student_gt_download=True,
     )
-    if version is None:
-        version = DatasetVersion(
-            id=new_id(),
-            dataset_id=dataset.id,
-            kind="preset",
-            class_map_json=NEU_CLASS_MAP,
-            preprocess_id=preprocess.id,
-            is_fixed_test=True,
-            forbid_student_gt_download=True,
-        )
-        db.add(version)
-        db.flush()
+    _ingest_folder_samples(
+        db,
+        neu20_version,
+        settings.repo_root / "assets" / "samples" / "neu" / "images",
+        settings.repo_root / "assets" / "samples" / "neu" / "masks",
+        settings,
+    )
+    _ensure_demo_samples(db, preprocess, neu20_version)
 
-    images_dir = settings.repo_root / "assets" / "samples" / "neu" / "images"
-    masks_dir = settings.repo_root / "assets" / "samples" / "neu" / "masks"
-    if images_dir.is_dir():
-        import cv2
+    neu_full = _ensure_preset_dataset(db, "NEU")
+    neu_full_version = _ensure_preset_version(
+        db,
+        neu_full,
+        preprocess,
+        is_fixed_test=False,
+        forbid_student_gt_download=True,
+    )
+    full_root = settings.neu_full_path
+    try:
+        full_root.resolve().relative_to((settings.repo_root / "assets").resolve())
+        (full_root / "images").mkdir(parents=True, exist_ok=True)
+        (full_root / "masks").mkdir(parents=True, exist_ok=True)
+    except ValueError:
+        pass
+    _ingest_folder_samples(db, neu_full_version, full_root / "images", full_root / "masks", settings)
+    seed_catalog(db)
 
-        existing = {
-            row.sample_key
-            for row in db.query(Sample).filter(Sample.version_id == version.id).all()
-        }
-        exts = {".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff"}
-        for image_path in sorted(p for p in images_dir.iterdir() if p.suffix.lower() in exts):
-            key = image_path.stem
-            if key in existing:
-                continue
-            bgr = cv2.imread(str(image_path), cv2.IMREAD_COLOR)
-            if bgr is None:
-                continue
-            h, w = bgr.shape[:2]
-            mask_path = None
-            for ext in (".png", ".bmp", ".jpg", ".jpeg"):
-                candidate = masks_dir / f"{key}{ext}"
-                if candidate.is_file():
-                    mask_path = candidate
-                    break
-            rel_img = image_path.relative_to(settings.repo_root / "assets").as_posix()
-            mask_uri = None
-            if mask_path is not None:
-                mask_uri = "asset:" + mask_path.relative_to(settings.repo_root / "assets").as_posix()
-            db.add(
-                Sample(
-                    id=new_id(),
-                    version_id=version.id,
-                    sample_key=key,
-                    origin_uri="asset:" + rel_img,
-                    mask_uri=mask_uri,
-                    width=w,
-                    height=h,
-                    sha256=_file_sha256(image_path),
-                )
-            )
-
-    _ensure_demo_samples(db, preprocess, version)
     db.commit()
+    _invalidate_model_lists()
 
 
 def _ensure_demo_samples(db: Session, preprocess: PreprocessSpecRow, eval_version: DatasetVersion) -> None:

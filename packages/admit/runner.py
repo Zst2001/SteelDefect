@@ -15,6 +15,7 @@ import torch
 import torch.nn as nn
 
 from admit.ckpt import extract_whitelisted_state, load_checkpoint_file
+from admit.perf import collect_env, count_all_parameters, measure_cpu_forward
 
 
 def _write_json(path: Path, payload: dict[str, Any]) -> None:
@@ -110,7 +111,7 @@ def run_admit(in_dir: Path, out_dir: Path) -> int:
             f"输出通道为 {int(logits.shape[1])}，与声明类别数 {num_classes} 不一致",
         )
 
-    param_count = int(sum(p.numel() for p in model.parameters()))
+    param_count = count_all_parameters(model)
     _write_json(
         out_dir / "result.json",
         {
@@ -163,9 +164,55 @@ def run_infer(in_dir: Path, out_dir: Path) -> int:
     return 0
 
 
+def run_perf(in_dir: Path, out_dir: Path) -> int:
+    out_dir.mkdir(parents=True, exist_ok=True)
+    manifest = json.loads((in_dir / "manifest.json").read_text(encoding="utf-8"))
+    py_path = in_dir / manifest.get("source_name", "model.py")
+    weight_path = in_dir / manifest.get("weight_name", "weights.pth")
+    entry = str(manifest.get("entry_symbol") or "build_model")
+    num_classes = int(manifest["num_classes"])
+    in_channels = int(manifest["in_channels"])
+    height = int(manifest["input_h"])
+    width = int(manifest["input_w"])
+    if not py_path.is_file():
+        return _fail(out_dir, "file", "缺少模型源码")
+    if not weight_path.is_file():
+        return _fail(out_dir, "file", "缺少权重文件")
+
+    try:
+        module = _load_module(py_path)
+        model = _build(module, entry, num_classes, in_channels)
+        model.eval()
+        ckpt = load_checkpoint_file(weight_path)
+        state, _name = extract_whitelisted_state(ckpt)
+        model.load_state_dict(state, strict=True)
+    except Exception as exc:
+        return _fail(out_dir, "load", f"测量装载失败：{exc}", traceback=traceback.format_exc(limit=8))
+
+    try:
+        stats = measure_cpu_forward(model, in_channels=in_channels, height=height, width=width)
+    except Exception as exc:
+        return _fail(out_dir, "forward", f"dummy 计时失败：{exc}", traceback=traceback.format_exc(limit=8))
+
+    _write_json(
+        out_dir / "result.json",
+        {
+            "ok": True,
+            "fail_stage": None,
+            "message": "perf ok",
+            "param_count": count_all_parameters(model),
+            "flops": None,
+            "weight_bytes": int(weight_path.stat().st_size),
+            "env": collect_env(),
+            **stats,
+        },
+    )
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Student isolate runner")
-    parser.add_argument("mode", choices=("admit", "infer"))
+    parser.add_argument("mode", choices=("admit", "infer", "perf"))
     parser.add_argument("--in", dest="in_dir", required=True)
     parser.add_argument("--out", dest="out_dir", required=True)
     args = parser.parse_args(argv)
@@ -174,6 +221,8 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.mode == "admit":
             return run_admit(in_dir, out_dir)
+        if args.mode == "perf":
+            return run_perf(in_dir, out_dir)
         return run_infer(in_dir, out_dir)
     except MemoryError:
         return _fail(out_dir, "resource", "内存不足")

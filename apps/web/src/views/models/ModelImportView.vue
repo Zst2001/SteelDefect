@@ -1,8 +1,8 @@
 <template>
   <div>
     <header class="head">
-      <p class="eyebrow">准入检查</p>
-      <h1>导入学生模型</h1>
+      <p class="eyebrow">模型中心</p>
+      <h1>导入模型</h1>
       <p>只接受单个 .py 与对应 .pth。网站进程不会 import 你的源码；检查在隔离容器中进行。失败即不能启动，没有导师审批环节。</p>
     </header>
 

@@ -165,8 +165,10 @@ def main() -> int:
         if listed.status_code != 200:
             return _fail("AC-10 models failed", listed)
         models = listed.json().get("items") or []
-        if len(models) != 3:
-            print("AC-12 expected 3 builtins", models)
+        slugs = {row.get("slug") for row in models}
+        expected = {"unet", "deeplabv3", "unetpp", "bisenet", "danet", "pspnet", "segformer"}
+        if slugs != expected:
+            print("AC-12 expected demo builtins", sorted(expected), "got", models)
             return 1
         sample_key = items[0]["sample_key"]
         model_id = models[0]["id"]

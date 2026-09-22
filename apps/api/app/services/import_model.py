@@ -210,12 +210,17 @@ async def import_student_model(
     )
     db.commit()
     invalidate_after_write(None, user.id)
+    enqueue_admit(version.id, settings)
+    return version
+
+
+def enqueue_admit(version_id: str, settings: Settings | None = None) -> None:
+    settings = settings or get_settings()
     queue = Queue(settings.rq_queue_name, connection=rq_connection())
     queue.enqueue(
         "apps.worker.jobs.run_admit",
-        version.id,
+        version_id,
         job_timeout=settings.admit_job_timeout_sec,
         result_ttl=86400,
         failure_ttl=86400,
     )
-    return version

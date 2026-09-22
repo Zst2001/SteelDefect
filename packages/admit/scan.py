@@ -11,6 +11,7 @@ ALLOWED_MODULE_ROOTS = {
     "dataclasses",
     "enum",
     "functools",
+    "__future__",
     "itertools",
     "math",
     "numbers",
@@ -88,6 +89,15 @@ BANNED_CALL_NAMES = {
     "urlopen",
 }
 
+# nn.Module.eval() / train() must not be treated as the builtin eval().
+BANNED_ATTR_CALLS = {
+    "Popen",
+    "__import__",
+    "popen",
+    "system",
+    "urlopen",
+}
+
 SUGGEST = "请只保留网络结构与 forward，不要访问网络、子进程、磁盘或动态执行。"
 
 
@@ -118,12 +128,11 @@ def _import_allowed(name: str) -> bool:
     return root in ALLOWED_MODULE_ROOTS
 
 
-def _call_name(node: ast.AST) -> str | None:
-    if isinstance(node, ast.Name):
-        return node.id
-    if isinstance(node, ast.Attribute):
-        return node.attr
-    return None
+def _getattr_on_self(node: ast.Call) -> bool:
+    if not node.args:
+        return False
+    first = node.args[0]
+    return isinstance(first, ast.Name) and first.id == "self"
 
 
 def scan_student_source(source: str, *, filename: str = "model.py") -> list[ScanIssue]:
@@ -153,9 +162,15 @@ def scan_student_source(source: str, *, filename: str = "model.py") -> list[Scan
                 if alias.name == "*":
                     issues.append(ScanIssue("不允许 from ... import *", node.lineno))
         elif isinstance(node, ast.Call):
-            name = _call_name(node.func)
-            if name in BANNED_CALL_NAMES:
-                issues.append(ScanIssue(f"不允许的调用 {name}()", node.lineno))
+            func = node.func
+            if isinstance(func, ast.Name):
+                name = func.id
+                if name == "getattr" and _getattr_on_self(node):
+                    continue
+                if name in BANNED_CALL_NAMES:
+                    issues.append(ScanIssue(f"不允许的调用 {name}()", node.lineno))
+            elif isinstance(func, ast.Attribute) and func.attr in BANNED_ATTR_CALLS:
+                issues.append(ScanIssue(f"不允许的调用 {func.attr}()", node.lineno))
 
     lowered = source.lower()
     for token, label in (
