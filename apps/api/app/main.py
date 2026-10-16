@@ -10,7 +10,7 @@ from fastapi.responses import JSONResponse
 from app.bootstrap import ROOT  # noqa: F401  # path bootstrap
 from app.config import get_settings
 from app.errors import AppError, app_error_handler, error_payload
-from app.routers import admin, auth, catalog, datasets, demo, health, me, models, records, tasks, uploads
+from app.routers import admin, assistant, auth, catalog, datasets, demo, health, me, models, records, tasks, uploads
 
 
 @asynccontextmanager
@@ -63,3 +63,4 @@ app.include_router(uploads.router, prefix="/api")
 app.include_router(datasets.router, prefix="/api")
 app.include_router(tasks.router, prefix="/api")
 app.include_router(records.router, prefix="/api")
+app.include_router(assistant.router, prefix="/api")

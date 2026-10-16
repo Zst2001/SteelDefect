@@ -48,20 +48,21 @@ const metaLine = computed(() => {
 .card {
   background: var(--lab-panel);
   border: 1px solid var(--lab-line);
-  padding: 18px;
+  padding: 22px 20px;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
   transition: border-color 180ms ease;
 }
 .card:hover {
-  border-color: var(--lab-accent);
+  border-color: var(--lab-fiducial);
 }
 .kind {
   color: var(--lab-accent-2);
-  font-size: 12px;
-  letter-spacing: 0.08em;
-  margin-bottom: 8px;
+  font-family: var(--lab-font-mono);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  margin-bottom: 10px;
 }
 .name {
   font-weight: 600;

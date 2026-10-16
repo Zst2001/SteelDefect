@@ -184,9 +184,10 @@ async function submit() {
 
 <style scoped>
 .eyebrow {
-  color: var(--lab-accent-2);
+  color: var(--lab-fiducial);
+  font-family: var(--lab-font-mono);
   letter-spacing: 0.16em;
-  font-size: 12px;
+  font-size: 11px;
 }
 .head p,
 .count,

@@ -36,6 +36,10 @@
         <h2>正式评测</h2>
         <p>在预置 NEU-20 上计算全量指标（不是论文完整 test split）。无掩码数据不能进入正式评测。</p>
       </router-link>
+      <router-link class="card" to="/assistant">
+        <h2>科研助手</h2>
+        <p>对话里连续追问。分割可分析已完成的对比或评测，也可确认后封装快速对比。模型专科测参并给出建议文本。学术专科按审定语料检索。无密钥时证据仍开，不编造指标。</p>
+      </router-link>
     </div>
 
     <section v-if="active.length" class="block">
@@ -156,9 +160,10 @@ onMounted(async () => {
 
 <style scoped>
 .eyebrow {
-  color: var(--lab-accent-2);
+  color: var(--lab-fiducial);
+  font-family: var(--lab-font-mono);
   letter-spacing: 0.16em;
-  font-size: 12px;
+  font-size: 11px;
   margin: 0 0 8px;
 }
 .head h1 {
@@ -183,12 +188,12 @@ onMounted(async () => {
   text-decoration: none;
   background: var(--lab-panel);
   border: 1px solid var(--lab-line);
-  padding: 20px;
-  min-height: 140px;
+  padding: 24px 22px;
+  min-height: 168px;
   transition: border-color 180ms ease;
 }
 .card:hover {
-  border-color: var(--lab-accent);
+  border-color: var(--lab-fiducial);
 }
 .card.muted {
   opacity: 0.72;

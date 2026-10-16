@@ -47,14 +47,14 @@ defineEmits<{
 .card {
   background: var(--lab-panel);
   border: 1px solid var(--lab-line);
-  padding: 18px;
+  padding: 22px 20px;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
   transition: border-color 180ms ease;
 }
 .card:hover {
-  border-color: var(--lab-accent);
+  border-color: var(--lab-fiducial);
 }
 .name {
   font-weight: 600;
@@ -67,6 +67,13 @@ defineEmits<{
   color: var(--lab-muted);
   font-size: 13px;
   line-height: 1.55;
+}
+.meta {
+  font-family: var(--lab-font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: var(--lab-fiducial);
+  margin-bottom: 8px;
 }
 .row {
   margin-top: 6px;

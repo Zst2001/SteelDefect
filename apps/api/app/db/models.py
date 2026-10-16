@@ -347,3 +347,54 @@ class CatalogDataset(Base):
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow, nullable=False)
+
+
+class AssistantSession(Base):
+    __tablename__ = "assistant_sessions"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), nullable=False, index=True)
+    specialty: Mapped[str] = mapped_column(String(32), nullable=False, default="segment")
+    title: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    working_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow, nullable=False)
+
+    turns: Mapped[list["AssistantTurn"]] = relationship(back_populates="session")
+
+
+class AssistantTurn(Base):
+    __tablename__ = "assistant_turns"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    session_id: Mapped[str] = mapped_column(String(36), ForeignKey("assistant_sessions.id"), nullable=False, index=True)
+    role: Mapped[str] = mapped_column(String(16), nullable=False, default="assistant")
+    content: Mapped[str | None] = mapped_column(Text, nullable=True)
+    intent: Mapped[str] = mapped_column(String(32), nullable=False, default="analyze_task")
+    tool_name: Mapped[str] = mapped_column(String(32), nullable=False, default="task.analyze")
+    params_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    result_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    task_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("tasks.id"), nullable=True, index=True)
+    llm_status: Mapped[str] = mapped_column(String(16), nullable=False, default="skipped")
+    llm_model: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    writing: Mapped[str | None] = mapped_column(Text, nullable=True)
+    evidence_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+
+    session: Mapped[AssistantSession] = relationship(back_populates="turns")
+
+
+class AssistantKbDoc(Base):
+    """Advisor-curated reading pack for the academic specialty. Students read-only."""
+
+    __tablename__ = "assistant_kb_docs"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    slug: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    category: Mapped[str] = mapped_column(String(32), nullable=False, default="protocol")
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    source_label: Mapped[str] = mapped_column(String(128), nullable=False, default="导师审定")
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow, nullable=False)

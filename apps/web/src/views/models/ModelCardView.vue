@@ -460,9 +460,9 @@ ul,
 .diff {
   overflow: auto;
   padding: 12px 16px;
-  background: #12171c;
+  background: var(--lab-well);
   border: 1px solid var(--lab-line);
-  color: #ece7dc;
+  color: var(--lab-text);
   font-size: 12px;
   line-height: 1.55;
   white-space: pre-wrap;

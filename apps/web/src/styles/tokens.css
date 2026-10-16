@@ -1,17 +1,25 @@
 :root {
-  --lab-bg: #14181d;
-  --lab-panel: #1c232b;
-  --lab-panel-2: #242c35;
-  --lab-text: #ece7dc;
-  --lab-muted: #9aa3ad;
-  --lab-accent: #c45c26;
-  --lab-accent-2: #d9a441;
-  --lab-line: #343d48;
+  --lab-rail: #05070a;
+  --lab-bg: #243140;
+  --lab-canvas: #243140;
+  --lab-panel: #2d3c4c;
+  --lab-panel-2: #354657;
+  --lab-well: #0c1016;
+  --lab-text: #e8edf1;
+  --lab-muted: #a8b4c0;
+  --lab-accent: #c44536;
+  --lab-accent-2: #3ec7d8;
+  --lab-fiducial: #3ec7d8;
+  --lab-line: #4a5b6c;
+  --lab-nav-active: rgba(62, 199, 216, 0.12);
   --neu-inc: #e23d2e;
   --neu-patch: #2f9e44;
   --neu-scratch: #2f6fed;
   --lab-danger: #c44536;
-  font-family: "Noto Sans SC", "IBM Plex Sans", sans-serif;
+  --lab-font: "Noto Sans SC", "IBM Plex Sans", sans-serif;
+  --lab-font-display: "Syne", "Noto Sans SC", sans-serif;
+  --lab-font-mono: "IBM Plex Mono", ui-monospace, monospace;
+  font-family: var(--lab-font);
 }
 
 html,
@@ -33,8 +41,27 @@ button,
 }
 
 :focus-visible {
-  outline: 2px solid var(--lab-accent);
+  outline: 2px solid var(--lab-fiducial);
   outline-offset: 2px;
+}
+
+html.dark {
+  --el-color-primary: #c44536;
+  --el-color-primary-light-3: #d45c4e;
+  --el-color-primary-light-5: #dc766a;
+  --el-color-primary-light-7: #e7a39b;
+  --el-color-primary-light-9: #f4d4d0;
+  --el-color-primary-dark-2: #a3382c;
+  --el-bg-color: var(--lab-panel);
+  --el-bg-color-page: var(--lab-canvas);
+  --el-bg-color-overlay: var(--lab-panel-2);
+  --el-fill-color-blank: var(--lab-panel);
+  --el-text-color-primary: var(--lab-text);
+  --el-text-color-regular: var(--lab-text);
+  --el-text-color-secondary: var(--lab-muted);
+  --el-border-color: var(--lab-line);
+  --el-border-color-light: var(--lab-line);
+  --el-border-radius-base: 0;
 }
 
 @media (prefers-reduced-motion: reduce) {

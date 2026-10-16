@@ -61,14 +61,14 @@ const period = computed(() => {
 .card {
   background: var(--lab-panel);
   border: 1px solid var(--lab-line);
-  padding: 18px;
+  padding: 22px 20px;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
   transition: border-color 180ms ease;
 }
 .card:hover {
-  border-color: var(--lab-accent);
+  border-color: var(--lab-fiducial);
 }
 .top {
   display: flex;
@@ -79,7 +79,8 @@ const period = computed(() => {
 }
 .source {
   color: var(--lab-accent-2);
-  letter-spacing: 0.06em;
+  font-family: var(--lab-font-mono);
+  letter-spacing: 0.08em;
 }
 .status {
   color: var(--lab-muted);

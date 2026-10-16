@@ -1,8 +1,13 @@
 <template>
   <div class="login">
     <section class="panel">
-      <p class="eyebrow">课题组科研网站</p>
-      <h1>钢铁缺陷分割对照台</h1>
+      <svg class="mark" viewBox="0 0 32 32" aria-hidden="true">
+        <circle cx="16" cy="16" r="11" fill="none" stroke="currentColor" stroke-width="1.4" />
+        <circle cx="16" cy="16" r="3.2" fill="none" stroke="currentColor" stroke-width="1.4" />
+        <path d="M16 2.5v5.5M16 24v5.5M2.5 16h5.5M24 16h5.5" stroke="currentColor" stroke-width="1.4" />
+      </svg>
+      <p class="eyebrow">智能感知与精密工业检测实验室</p>
+      <h1>对照台</h1>
       <p class="lead">在 AutoDL 训完后导入权重，于同一批图上对照内置 baseline。本站不做训练。</p>
       <el-form @submit.prevent="submitLogin">
         <el-form-item label="用户名">
@@ -55,22 +60,26 @@ async function submitLogin() {
   min-height: 100vh;
   display: grid;
   place-items: center;
-  background:
-    radial-gradient(circle at 20% 20%, rgba(196, 92, 38, 0.18), transparent 32%),
-    var(--lab-bg);
+  background: var(--lab-rail);
 }
 .panel {
-  width: min(440px, 92vw);
+  width: min(460px, 92vw);
   background: var(--lab-panel);
   border: 1px solid var(--lab-line);
-  padding: 36px 32px;
+  padding: 44px 40px;
+}
+.mark {
+  width: 36px;
+  height: 36px;
+  color: var(--lab-fiducial);
+  margin-bottom: 16px;
 }
 .eyebrow {
-  color: var(--lab-accent-2);
+  color: var(--lab-fiducial);
   letter-spacing: 0.18em;
-  text-transform: uppercase;
   font-size: 12px;
   margin: 0 0 8px;
+  font-family: var(--lab-font-mono);
 }
 h1 {
   margin: 0 0 12px;

@@ -55,9 +55,16 @@ class Settings(BaseSettings):
     student_image: str = "steel-lab-student:cpu"
     llm_api_key: str = ""
     dashscope_api_key: str = ""
-    llm_base_url: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
-    llm_model: str = "qwen3.8-max"
-    llm_timeout_sec: float = 20
+    llm_base_url: str = "https://ark.cn-beijing.volces.com/api/v3"
+    llm_model: str = "deepseek-v4-1-flash-260910"
+    llm_timeout_sec: float = 60
+    llm_embed_model: str = "doubao-embedding-vision-251215"
+    llm_embed_dim: int = 1024
+    milvus_uri: str = ""
+    milvus_token: str = ""
+    milvus_collection_name: str = "ippilab"
+    bailian_kb_index_id: str = ""
+    bailian_workspace_id: str = ""
 
     @property
     def resolved_llm_api_key(self) -> str:

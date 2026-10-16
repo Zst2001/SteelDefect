@@ -2,7 +2,11 @@
   <div class="shell">
     <aside class="side">
       <router-link class="brand" to="/">
-        <span class="mark"></span>
+        <svg class="mark" viewBox="0 0 32 32" aria-hidden="true">
+          <circle cx="16" cy="16" r="11" fill="none" stroke="currentColor" stroke-width="1.4" />
+          <circle cx="16" cy="16" r="3.2" fill="none" stroke="currentColor" stroke-width="1.4" />
+          <path d="M16 2.5v5.5M16 24v5.5M2.5 16h5.5M24 16h5.5" stroke="currentColor" stroke-width="1.4" />
+        </svg>
         <div>
           <div class="title">对照台</div>
           <div class="sub">工业缺陷分割 · CPU</div>
@@ -13,9 +17,9 @@
         :default-active="active"
         :default-openeds="openedMenus"
         :key="openedMenus.join('|') || 'root'"
-        background-color="#1c232b"
-        text-color="#ece7dc"
-        active-text-color="#d9a441"
+        background-color="var(--lab-rail)"
+        text-color="#e8edf1"
+        active-text-color="#3ec7d8"
       >
         <el-menu-item index="/">首页</el-menu-item>
         <el-menu-item index="/demo">公开演示</el-menu-item>
@@ -52,8 +56,9 @@
         <div class="role">首页与公开演示可直接浏览</div>
         <router-link class="logout" to="/login">登录</router-link>
       </div>
+      <p class="bench-status">CPU 常驻 · 本站不做训练</p>
     </aside>
-    <main class="main">
+    <main class="main" :class="{ flush: route.path.startsWith('/assistant') }">
       <router-view />
     </main>
   </div>
@@ -173,12 +178,13 @@ async function logout() {
 <style scoped>
 .shell {
   display: grid;
-  grid-template-columns: 232px 1fr;
+  grid-template-columns: 248px 1fr;
   min-height: 100vh;
 }
 .side {
-  background: var(--lab-panel);
+  background: var(--lab-rail);
   border-right: 1px solid var(--lab-line);
+  box-shadow: inset -1px 0 0 color-mix(in srgb, var(--lab-fiducial) 35%, transparent);
   display: flex;
   flex-direction: column;
   padding: 20px 0 16px;
@@ -191,13 +197,15 @@ async function logout() {
   text-decoration: none;
 }
 .mark {
-  width: 14px;
-  height: 36px;
-  background: linear-gradient(180deg, var(--lab-accent), var(--lab-accent-2));
+  width: 34px;
+  height: 34px;
+  flex: none;
+  color: var(--lab-fiducial);
 }
 .title {
+  font-family: var(--lab-font-display);
   font-weight: 700;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.12em;
 }
 .sub {
   color: var(--lab-muted);
@@ -205,7 +213,14 @@ async function logout() {
   margin-top: 2px;
 }
 .main {
-  padding: 28px 32px 48px;
+  min-height: 100vh;
+  background: var(--lab-canvas);
+  padding: 32px 40px 56px;
+}
+.main.flush {
+  padding: 0;
+  height: 100vh;
+  overflow: hidden;
 }
 .account {
   margin: auto 20px 0;
@@ -233,23 +248,45 @@ async function logout() {
 }
 .logout:hover {
   color: var(--lab-text);
-  border-color: var(--lab-accent);
+  border-color: var(--lab-fiducial);
+}
+.bench-status {
+  margin: 10px 20px 0;
+  color: var(--lab-muted);
+  font-family: var(--lab-font-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
 }
 :deep(.el-sub-menu.models-hub > .el-sub-menu__title) {
   cursor: pointer;
 }
-:deep(.el-sub-menu .el-menu) {
-  background-color: #1c232b !important;
+:deep(.el-menu) {
+  border-right: none !important;
 }
+:deep(.el-menu-item),
 :deep(.el-sub-menu__title) {
-  color: #ece7dc !important;
+  border-left: 2px solid transparent;
 }
+:deep(.el-menu-item:hover),
 :deep(.el-sub-menu__title:hover) {
   background-color: transparent !important;
   color: var(--lab-text) !important;
 }
+:deep(.el-menu-item.is-active) {
+  background-color: var(--lab-nav-active) !important;
+  border-left-color: var(--lab-fiducial);
+  color: var(--lab-fiducial) !important;
+}
+:deep(.el-sub-menu .el-menu) {
+  background-color: var(--lab-rail) !important;
+}
+:deep(.el-sub-menu__title) {
+  color: #e8edf1 !important;
+}
 :deep(.el-sub-menu.is-active > .el-sub-menu__title),
 :deep(.el-sub-menu.hub-current > .el-sub-menu__title) {
+  background-color: var(--lab-nav-active) !important;
+  border-left-color: var(--lab-fiducial);
   color: var(--lab-accent-2) !important;
 }
 </style>

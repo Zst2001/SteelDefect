@@ -53,6 +53,7 @@
           <el-button v-if="row.can_rerun" link type="primary" @click="rerun(row)">再跑</el-button>
           <el-button v-if="row.can_submit" link type="primary" @click="submit(row)">提交导师</el-button>
           <el-button v-if="row.can_withdraw" link type="primary" @click="withdraw(row)">撤回</el-button>
+          <router-link v-if="row.can_analyze" :to="{ path: '/assistant', query: { taskId: row.id } }">用科研助手分析</router-link>
           <el-button v-if="row.can_note" link type="primary" @click="editNote(row)">备注</el-button>
           <el-button v-if="row.can_archive" link type="primary" @click="toggleArchive(row)">
             {{ archived ? "取消归档" : "归档" }}
@@ -94,6 +95,7 @@ type RecordRow = {
   can_rerun: boolean;
   can_archive: boolean;
   can_note: boolean;
+  can_analyze?: boolean;
 };
 
 const role = ref<"student" | "advisor">("student");

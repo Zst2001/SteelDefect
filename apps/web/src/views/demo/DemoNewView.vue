@@ -139,9 +139,10 @@ async function submit() {
 
 <style scoped>
 .eyebrow {
-  color: var(--lab-accent-2);
+  color: var(--lab-fiducial);
+  font-family: var(--lab-font-mono);
   letter-spacing: 0.16em;
-  font-size: 12px;
+  font-size: 11px;
 }
 .head p,
 .meta {
@@ -159,7 +160,7 @@ async function submit() {
   margin: 12px 0 16px;
 }
 .coupon {
-  background: #0f1318;
+  background: var(--lab-well);
   border: 1px solid var(--lab-line);
   color: var(--lab-muted);
   padding: 0;
@@ -179,9 +180,9 @@ async function submit() {
   letter-spacing: 0.04em;
 }
 .coupon.on {
-  border-color: var(--lab-accent);
+  border-color: var(--lab-fiducial);
   color: var(--lab-text);
-  box-shadow: inset 0 0 0 1px var(--lab-accent);
+  box-shadow: inset 0 0 0 1px var(--lab-fiducial);
 }
 .coupon.full {
   opacity: 0.45;

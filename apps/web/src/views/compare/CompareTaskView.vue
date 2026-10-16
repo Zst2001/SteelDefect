@@ -15,6 +15,9 @@
         数据 {{ task.dataset.name }}
         <template v-if="task.dataset.is_fixed_test"> · 固定测试集</template>
       </p>
+      <p v-if="canAnalyze" class="meta">
+        <router-link :to="{ path: '/assistant', query: { taskId } }">用科研助手分析</router-link>
+      </p>
     </header>
 
     <el-alert v-if="task?.error_summary" :title="task.error_summary" type="warning" show-icon class="mb" />
@@ -187,6 +190,11 @@ let timer: number | undefined;
 
 const currentSample = computed(() => previewSamples.value[index.value]);
 const isEval = computed(() => task.value?.type === "eval");
+const canAnalyze = computed(() => {
+  const row = task.value;
+  if (!row || row.type === "demo") return false;
+  return ["success", "partial_success"].includes(row.status);
+});
 const evalPending = computed(() => isEval.value && ["queued", "running"].includes(task.value?.status ?? ""));
 const previewSamples = computed(() => {
   const all = task.value?.samples ?? [];
@@ -297,9 +305,10 @@ onUnmounted(() => {
 
 <style scoped>
 .eyebrow {
-  color: var(--lab-accent-2);
+  color: var(--lab-fiducial);
+  font-family: var(--lab-font-mono);
   letter-spacing: 0.16em;
-  font-size: 12px;
+  font-size: 11px;
 }
 .head p,
 .models,
@@ -328,7 +337,7 @@ onUnmounted(() => {
   border: 1px solid var(--lab-line);
   padding: 16px 18px 8px;
   margin-bottom: 20px;
-  background: #14181e;
+  background: var(--lab-panel);
 }
 .metrics h2 {
   margin: 0 0 8px;
@@ -356,7 +365,7 @@ onUnmounted(() => {
   display: inline-block;
 }
 .stage {
-  background: #0f1318;
+  background: var(--lab-well);
   border: 1px solid var(--lab-line);
   padding: 12px;
   overflow: auto;

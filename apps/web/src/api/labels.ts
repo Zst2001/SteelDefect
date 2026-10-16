@@ -126,6 +126,24 @@ export function saveBlobFile(blob: Blob, filename: string): void {
   URL.revokeObjectURL(url);
 }
 
+export function toApiPath(path: string): string {
+  return path.replace(/^\/api/, "");
+}
+
+export async function openAuthFile(path: string): Promise<void> {
+  const response = await http.get(toApiPath(path), { responseType: "blob" });
+  const type = String(response.headers["content-type"] ?? "");
+  if (type.includes("application/json")) {
+    throw new Error((await messageFromBlob(response.data as Blob)) || "打开失败");
+  }
+  const url = URL.createObjectURL(response.data);
+  const opened = window.open(url, "_blank", "noopener");
+  if (!opened) {
+    saveBlobFile(response.data as Blob, path.split("/").pop() || "artifact");
+  }
+  window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+}
+
 export async function downloadAuthFile(path: string, filename: string): Promise<void> {
   try {
     const response = await http.get(path, { responseType: "blob" });

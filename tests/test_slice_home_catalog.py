@@ -167,6 +167,8 @@ def test_homepage_research_section_has_no_code_and_shows_funds() -> None:
     assert 'code_url' not in page.split("id=\"research-works\"")[1].split("id=\"defect-models\"")[0]
     assert "智能感知与精密工业检测实验室" in page
     assert "IPPI Lab" in page
-    assert "详细介绍" in page
+    assert "详细介绍" not in page
+    assert "本站是实验室的科研实验平台" not in page
     assert "62202211" in page
     assert "20242BCC32021" in page
+    assert "不是模型输出" in page

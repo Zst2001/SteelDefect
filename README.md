@@ -24,6 +24,7 @@
 - AC-04：全部图片配对掩码后，在原图显示尺寸上给出本批 mIoU / mDice / 逐类 IoU（参考指标，不代表完整测试集）；图层包可含 `gt/`、`error/`，仍不含 `metrics.json` / PDF
 - 正式评测：仅预置 **NEU-20**（固定测试集，学生不可下载 GT）。可全选当前全部内置 baseline。全量 20 张计算 mIoU / mDice / 逐类 IoU；Acc 只出现在详情，不作为主指标。拼图按文件名排序抽取 8 张。NEU-20 不是论文完整 test split
 - 结果记录：本人对比/评测/演示档案；学生可将对比/评测提交导师（演示不可提交）；同学互不可见；再跑生成新任务；演示页不展示精度
+- 科研助手：对话画布 + 输入框旁专科选择器。同一会话可追问并带上下文；换专科开新线程。分割可分析已有对比/评测，也可确认后封装快速对比；模型专科调用实验室测参并给出建议代码文本（不写盘）；学术专科按导师审定语料检索（Milvus 集合 `ippilab`，不读 `paper_literature`）。无密钥时证据/命中/测参档案仍开，写作关。
 
 ## 仓库结构
 
@@ -90,7 +91,7 @@ npm run dev
 
 Worker 使用 RQ **SimpleWorker**：不 fork，L1 能缓存已加载的内置 `nn.Module`，并兼容 Windows。FastAPI / Worker **不得** `import` 学生 `.py`。
 
-学生插件契约：单文件提供 `build_model(num_classes, in_channels=3, **kwargs)` 或表单指定的 `nn.Module` 类；`forward` 主输出为 `B×C×H×W` logits。导入失败时，模型卡上的**模型适配助手**可对入口 / 构造参数 / 多路输出第 1 项 / checkpoint `model_name` 对应的已有消融变体做适配（同意后改当前版本的适配层并复检；不改原 class、不放宽权重加载）。大模型只写说明：在 `.env` 填 `LLM_API_KEY` 或 `DASHSCOPE_API_KEY`，默认 `LLM_MODEL=qwen3.8-max`（百炼 OpenAI 兼容接口，可按导师要求改模型名）。产品边界见 `docs/模型适配助手产品说明.md`。
+学生插件契约：单文件提供 `build_model(num_classes, in_channels=3, **kwargs)` 或表单指定的 `nn.Module` 类；`forward` 主输出为 `B×C×H×W` logits。导入失败时，模型卡上的**模型适配助手**可对入口 / 构造参数 / 多路输出第 1 项 / checkpoint `model_name` 对应的已有消融变体做适配（同意后改当前版本的适配层并复检；不改原 class、不放宽权重加载）。大模型只写说明：在 `.env` 填 `LLM_API_KEY`，默认火山方舟 `LLM_MODEL=deepseek-v4-1-flash-260910`（OpenAI 兼容接口，可按导师要求改模型名；`DASHSCOPE_API_KEY` 仍可作备用）。产品边界见 `docs/模型适配助手产品说明.md`。
 
 ## 验收冒烟（API + Worker 已启动）
 
@@ -152,7 +153,7 @@ python scripts/smoke_f.py
 单测（含展示面 H1–H6，不需 Worker）：
 
 ```powershell
-python -m pytest tests/test_slice_h1.py tests/test_slice_h2.py tests/test_slice_h3.py tests/test_slice_h4.py tests/test_slice_h5.py tests/test_slice_h6.py tests/test_slice_g.py tests/test_slice_adapt.py tests/test_slice_data.py
+python -m pytest tests/test_slice_h1.py tests/test_slice_h2.py tests/test_slice_h3.py tests/test_slice_h4.py tests/test_slice_h5.py tests/test_slice_h6.py tests/test_slice_g.py tests/test_slice_adapt.py tests/test_slice_data.py tests/test_slice_assistant.py
 ```
 
 ## 硬性约束（已落实）
@@ -162,5 +163,5 @@ python -m pytest tests/test_slice_h1.py tests/test_slice_h2.py tests/test_slice_
 - PNG / `.pth` / 原图不进 Redis；任务终态在 MySQL
 - DeepLab / BiSeNet / DANet / PSPNet 构建 `pretrained=False`；checkpoint 优先 `model_state`；学生权重 `weights_only`
 - 对比写入 `PreprocessSpec`（默认 200×200 CLAHE/椒盐），禁止静默改尺寸
-- 检测 / 分类页按钮 disabled；科研助手无 API Key 时显示不可用
+- 检测 / 分类页按钮 disabled；科研助手无密钥时证据包 / 检索命中 / 测参档案仍开、写作关，不编造指标
 - 公开演示不复用「上传 + 有 GT 出指标」的 compare 协议

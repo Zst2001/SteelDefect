@@ -136,9 +136,10 @@ onMounted(async () => {
 
 <style scoped>
 .eyebrow {
-  color: var(--lab-accent-2);
+  color: var(--lab-fiducial);
+  font-family: var(--lab-font-mono);
   letter-spacing: 0.16em;
-  font-size: 12px;
+  font-size: 11px;
 }
 .head p,
 .meta,
@@ -192,7 +193,7 @@ figcaption {
 }
 .coupon {
   margin: 0;
-  background: #0f1318;
+  background: var(--lab-well);
   border: 1px solid var(--lab-line);
 }
 .coupon img {

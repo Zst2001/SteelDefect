@@ -68,6 +68,7 @@ def record_flags(task: Task, user: User) -> dict:
         "can_rerun": owner and not task.archived and task.type in {"compare", "eval", "demo"},
         "can_archive": owner,
         "can_note": owner,
+        "can_analyze": task.type in LAB_TYPES and task.status in DONE,
     }
 
 

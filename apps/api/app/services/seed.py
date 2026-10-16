@@ -26,6 +26,7 @@ from app.db.models import (
 )
 from app.security import hash_password
 from app.services.catalog import seed_catalog
+from app.services.assistant_kb import seed_assistant_kb
 from app.util_time import new_id
 
 IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff"}
@@ -287,6 +288,7 @@ def seed_all(db: Session, settings: Settings) -> None:
         pass
     _ingest_folder_samples(db, neu_full_version, full_root / "images", full_root / "masks", settings)
     seed_catalog(db)
+    seed_assistant_kb(db)
 
     db.commit()
     _invalidate_model_lists()
