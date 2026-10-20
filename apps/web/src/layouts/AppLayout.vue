@@ -26,10 +26,9 @@
         <el-menu-item index="/workbench">工作台</el-menu-item>
         <el-sub-menu index="defect">
           <template #title>缺陷检测</template>
-          <el-menu-item index="/compare/new">缺陷分割</el-menu-item>
-          <el-menu-item index="/eval/new">正式评测</el-menu-item>
-          <el-menu-item index="/detection">目标检测</el-menu-item>
-          <el-menu-item index="/classification">缺陷分类</el-menu-item>
+          <el-menu-item index="/inspect/steel/segmentation">钢铁检测</el-menu-item>
+          <el-menu-item index="/inspect/pcb">PCB板检测</el-menu-item>
+          <el-menu-item index="/inspect/solar">太阳能电池板检测</el-menu-item>
         </el-sub-menu>
         <el-menu-item index="/datasets">数据集</el-menu-item>
         <el-sub-menu
@@ -81,9 +80,18 @@ const active = computed(() => {
   if (route.path.startsWith("/models/perf")) return "/models/perf";
   if (route.path.startsWith("/models/scatter")) return "/models/scatter";
   if (route.path.startsWith("/models")) return "/models";
-  if (route.path.startsWith("/compare")) return "/compare/new";
+  if (route.path.startsWith("/inspect/pcb") || route.path.startsWith("/pcb/")) return "/inspect/pcb";
+  if (route.path.startsWith("/inspect/solar") || route.path.startsWith("/solar/")) return "/inspect/solar";
+  if (
+    route.path.startsWith("/inspect/steel") ||
+    route.path.startsWith("/compare") ||
+    route.path.startsWith("/eval") ||
+    route.path === "/detection" ||
+    route.path === "/classification"
+  ) {
+    return "/inspect/steel/segmentation";
+  }
   if (route.path.startsWith("/datasets")) return "/datasets";
-  if (route.path.startsWith("/eval")) return "/eval/new";
   return route.path;
 });
 
@@ -125,10 +133,9 @@ function bindModelHubTitle() {
 const openedMenus = computed(() => {
   const item = active.value;
   if (
-    item === "/compare/new" ||
-    item === "/eval/new" ||
-    item === "/detection" ||
-    item === "/classification"
+    item === "/inspect/steel/segmentation" ||
+    item === "/inspect/pcb" ||
+    item === "/inspect/solar"
   ) {
     return ["defect"];
   }

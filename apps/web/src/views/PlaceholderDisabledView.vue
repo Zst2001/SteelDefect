@@ -1,7 +1,8 @@
 <template>
   <div>
     <h1>{{ title }}</h1>
-    <p v-if="kind === 'detection'">规划中的数据格式：检测框；指标为 mAP。第一版不跑真实检测任务。</p>
+    <p v-if="kind === 'scene-detection'">缺陷检测尚未接入权重与推理，不能提交任务。</p>
+    <p v-else-if="kind === 'detection'">规划中的数据格式：检测框；指标为 mAP。第一版不跑真实检测任务。</p>
     <p v-else>规划中的数据格式：图级标签；指标为 Accuracy / F1。第一版不跑真实分类任务。</p>
     <el-button disabled>提交任务（未开放）</el-button>
   </div>

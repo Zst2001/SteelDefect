@@ -6,6 +6,7 @@
       <p>
         同一批图对照内置或已导入模型。原图请用 <code>images</code> 下的 JPG 钢表面图。掩码用 <code>masks</code> 下的 PNG（看起来接近全黑，是类别索引，不是原图）。文件名主名须一致；全部配对后计算本批参考指标，缺一张则整批不计算精度。
       </p>
+      <p><router-link class="eval-link" to="/eval/new">正式评测</router-link>（仅 NEU-20 固定测试集）</p>
     </header>
 
     <h2>原图</h2>
@@ -188,6 +189,9 @@ async function submit() {
   font-family: var(--lab-font-mono);
   letter-spacing: 0.16em;
   font-size: 11px;
+}
+.eval-link {
+  color: var(--lab-fiducial);
 }
 .head p,
 .count,
