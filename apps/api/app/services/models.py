@@ -4,9 +4,15 @@ from infer.spec import NEU_CLASS_MAP, builtin_sort_key
 from sqlalchemy.orm import Session, selectinload
 
 from app.db.models import Model, ModelVersion, PreprocessSpecRow, User
+from app.errors import AppError
 from app.services.import_model import model_dir, read_report
 
 VIZ_KINDS = ["origin", "pred_color", "overlay", "boundary", "cam", "montage"]
+
+
+def is_classification_version(db: Session, version: ModelVersion) -> bool:
+    spec = db.get(PreprocessSpecRow, version.preprocess_id)
+    return bool(spec and spec.dataset == "neu_cls")
 
 
 def can_view_version(user: User, model: Model, version: ModelVersion) -> bool:
@@ -17,6 +23,38 @@ def can_view_version(user: User, model: Model, version: ModelVersion) -> bool:
     if model.owner_id == user.id:
         return True
     return version.visibility == "shared"
+
+
+def can_use_version(user: User, model: Model, version: ModelVersion) -> bool:
+    """Execution permission; advisor visibility is not permission to run private code."""
+    if model.source == "builtin":
+        return True
+    return model.source == "student" and (
+        model.owner_id == user.id or version.visibility == "shared"
+    )
+
+
+def assert_model_role_access(
+    user: User, model: Model | None, version: ModelVersion, role: str,
+) -> None:
+    expected = {"baseline": "builtin", "student_under_test": "student"}
+    if role not in expected:
+        raise AppError("模型任务角色无效", code="MODEL_ROLE_INVALID", stage="protocol")
+    if model is None or model.source != expected[role]:
+        code = "NOT_BASELINE" if role == "baseline" else "NOT_STUDENT_MODEL"
+        raise AppError("模型来源与任务角色不一致", code=code, stage="protocol")
+    if not can_use_version(user, model, version):
+        raise AppError("当前无权使用该模型", code="FORBIDDEN", stage="auth", status_code=403)
+
+
+def assert_model_content_access(user: User, model: Model, version: ModelVersion) -> None:
+    """Source advice / check logs only; does not grant source downloads or edits."""
+    allowed = model.source == "builtin" or (
+        model.source == "student"
+        and (model.owner_id == user.id or version.visibility == "shared")
+    )
+    if not allowed:
+        raise AppError("模型不存在", code="NOT_FOUND", stage="auth", status_code=404)
 
 
 def serialize_version(db: Session, version: ModelVersion, model: Model, *, include_report: bool = False) -> dict:
@@ -89,6 +127,10 @@ def list_visible_versions(db: Session, user: User) -> list[dict]:
     )
     items: list[dict] = []
     for version in rows:
+        # Classification has its own validated catalog and Bx6 executor.
+        # The default model catalog feeds segmentation forms and assistant tools.
+        if is_classification_version(db, version):
+            continue
         model = version.model
         if can_view_version(user, model, version):
             items.append(serialize_version(db, version, model))

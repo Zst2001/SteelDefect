@@ -1,0 +1,414 @@
+{
+  "runtime": {
+    "torch": "2.14.0+cpu",
+    "torchvision": "0.29.0+cpu",
+    "Pillow": "12.3.0"
+  },
+  "threads": 2,
+  "latency_scope": "CPU model forward only; B=1, 3x224x224; preprocessing/loading separately timed",
+  "rss_scope": "Process lifetime peak working set, sequential models; includes Python/runtime/allocator; not per-model incremental memory",
+  "rows": [
+    {
+      "slug": "mobilenet_v3_small",
+      "ok": true,
+      "runtime": {
+        "torch": "2.14.0+cpu",
+        "torchvision": "0.29.0+cpu",
+        "Pillow": "12.3.0"
+      },
+      "threads": 2,
+      "validation_source": "deterministic synthetic RGB images; no ground truth",
+      "device": "cpu",
+      "strict": true,
+      "weights_only": true,
+      "weights": null,
+      "asset_check_ms": 21.6854999998759,
+      "asset_hash": "676cfaf09220a933305f1d479bb6d19d418fe7ef98828a92b07ff57ca5522c8b",
+      "weight_sha256": "784d4c52405cd8f14cb73c389aa306c658c292554951c472abcd4556741ea6cd",
+      "classes_hash": "df62ab880bf84cf7ba81ca113a8eb9f135864ba6e3a9d5c4e7f4732eb764d46c",
+      "preprocess_hash": "e4a62a818de5ac98bdc714a98b6748a7d070443cd055d4104c07351341a3bbe3",
+      "protocol_hash": "f0eb84ad7725549c50e343eb0ededd9e5baea2e14843c484d7b11c41621c215a",
+      "param_count": 1524006,
+      "load_ms": 1666.2001999993663,
+      "preprocess_two_images_ms": 6.047099999705097,
+      "input_b1": [
+        1,
+        3,
+        224,
+        224
+      ],
+      "input_rectangle": [
+        1,
+        3,
+        224,
+        448
+      ],
+      "shape_b1": [
+        1,
+        6
+      ],
+      "shape_b2": [
+        2,
+        6
+      ],
+      "shape_rectangle": [
+        1,
+        6
+      ],
+      "finite": true,
+      "warmup_runs": 3,
+      "timed_runs": 10,
+      "forward_ms_p50": 11.962700000367477,
+      "forward_ms_p95": 15.604370001074127,
+      "forward_ms_samples": [
+        17.415800000890158,
+        12.631800000235671,
+        11.961199999859673,
+        7.946300000185147,
+        10.365100000854,
+        11.96420000087528,
+        12.62959999985469,
+        13.390400001298985,
+        10.319600000002538,
+        7.477800001652213
+      ],
+      "peak_process_rss_bytes": 326864896,
+      "measured_at": "2026-10-28T07:58:03.761595+00:00"
+    },
+    {
+      "slug": "resnet18",
+      "ok": true,
+      "runtime": {
+        "torch": "2.14.0+cpu",
+        "torchvision": "0.29.0+cpu",
+        "Pillow": "12.3.0"
+      },
+      "threads": 2,
+      "validation_source": "deterministic synthetic RGB images; no ground truth",
+      "device": "cpu",
+      "strict": true,
+      "weights_only": true,
+      "weights": null,
+      "asset_check_ms": 142.77709999987565,
+      "asset_hash": "1598d19de3e97e2f61963903e714389fc9e1e4a425fd77182835183176d01f06",
+      "weight_sha256": "b55eaff4414163b1fa983f31ac58cb4a8c508a0cee0fecd528a55de894622efe",
+      "classes_hash": "df62ab880bf84cf7ba81ca113a8eb9f135864ba6e3a9d5c4e7f4732eb764d46c",
+      "preprocess_hash": "e4a62a818de5ac98bdc714a98b6748a7d070443cd055d4104c07351341a3bbe3",
+      "protocol_hash": "f0eb84ad7725549c50e343eb0ededd9e5baea2e14843c484d7b11c41621c215a",
+      "param_count": 11179590,
+      "load_ms": 375.01239999983227,
+      "preprocess_two_images_ms": 6.788599999708822,
+      "input_b1": [
+        1,
+        3,
+        224,
+        224
+      ],
+      "input_rectangle": [
+        1,
+        3,
+        224,
+        448
+      ],
+      "shape_b1": [
+        1,
+        6
+      ],
+      "shape_b2": [
+        2,
+        6
+      ],
+      "shape_rectangle": [
+        1,
+        6
+      ],
+      "finite": true,
+      "warmup_runs": 3,
+      "timed_runs": 10,
+      "forward_ms_p50": 44.828250000136904,
+      "forward_ms_p95": 52.420079999774316,
+      "forward_ms_samples": [
+        48.57809999884921,
+        43.12419999951089,
+        48.519399999349844,
+        50.6305999988399,
+        53.88420000053884,
+        45.095200001014746,
+        44.56129999925906,
+        38.466100000732695,
+        34.59140000086336,
+        34.64010000061535
+      ],
+      "peak_process_rss_bytes": 405360640,
+      "measured_at": "2026-10-28T07:58:05.181465+00:00"
+    },
+    {
+      "slug": "efficientnet_b0",
+      "ok": true,
+      "runtime": {
+        "torch": "2.14.0+cpu",
+        "torchvision": "0.29.0+cpu",
+        "Pillow": "12.3.0"
+      },
+      "threads": 2,
+      "validation_source": "deterministic synthetic RGB images; no ground truth",
+      "device": "cpu",
+      "strict": true,
+      "weights_only": true,
+      "weights": null,
+      "asset_check_ms": 48.03100000026461,
+      "asset_hash": "80976e5a649f0850ee23530d08c0ca1410d4f830a5f9a075842196beef462fc8",
+      "weight_sha256": "afd353471f50eed781e74f396b8982a7734887d7627222df31102e80b85ef698",
+      "classes_hash": "df62ab880bf84cf7ba81ca113a8eb9f135864ba6e3a9d5c4e7f4732eb764d46c",
+      "preprocess_hash": "e4a62a818de5ac98bdc714a98b6748a7d070443cd055d4104c07351341a3bbe3",
+      "protocol_hash": "f0eb84ad7725549c50e343eb0ededd9e5baea2e14843c484d7b11c41621c215a",
+      "param_count": 4015234,
+      "load_ms": 167.0285000000149,
+      "preprocess_two_images_ms": 3.945899999962421,
+      "input_b1": [
+        1,
+        3,
+        224,
+        224
+      ],
+      "input_rectangle": [
+        1,
+        3,
+        224,
+        448
+      ],
+      "shape_b1": [
+        1,
+        6
+      ],
+      "shape_b2": [
+        2,
+        6
+      ],
+      "shape_rectangle": [
+        1,
+        6
+      ],
+      "finite": true,
+      "warmup_runs": 3,
+      "timed_runs": 10,
+      "forward_ms_p50": 30.204100000446488,
+      "forward_ms_p95": 41.5000649999456,
+      "forward_ms_samples": [
+        28.480399998443318,
+        36.6665000001376,
+        28.701799999907962,
+        29.52230000119016,
+        30.885899999702815,
+        32.9580999987229,
+        28.899199998704717,
+        26.934100000289618,
+        31.39489999921352,
+        45.45479999978852
+      ],
+      "peak_process_rss_bytes": 405360640,
+      "measured_at": "2026-10-28T07:58:06.120402+00:00"
+    },
+    {
+      "slug": "resnet50",
+      "ok": true,
+      "runtime": {
+        "torch": "2.14.0+cpu",
+        "torchvision": "0.29.0+cpu",
+        "Pillow": "12.3.0"
+      },
+      "threads": 2,
+      "validation_source": "deterministic synthetic RGB images; no ground truth",
+      "device": "cpu",
+      "strict": true,
+      "weights_only": true,
+      "weights": null,
+      "asset_check_ms": 258.0673000011302,
+      "asset_hash": "d21002d82420e61261dc53d40599b6d7f816e1b3b1aa02d77fce001befae2b76",
+      "weight_sha256": "a2799512629725946e008676873e7b504458619d41c12ac67dd2daff5c1b1d56",
+      "classes_hash": "df62ab880bf84cf7ba81ca113a8eb9f135864ba6e3a9d5c4e7f4732eb764d46c",
+      "preprocess_hash": "e4a62a818de5ac98bdc714a98b6748a7d070443cd055d4104c07351341a3bbe3",
+      "protocol_hash": "f0eb84ad7725549c50e343eb0ededd9e5baea2e14843c484d7b11c41621c215a",
+      "param_count": 23520326,
+      "load_ms": 611.0143999994762,
+      "preprocess_two_images_ms": 3.435100001297542,
+      "input_b1": [
+        1,
+        3,
+        224,
+        224
+      ],
+      "input_rectangle": [
+        1,
+        3,
+        224,
+        448
+      ],
+      "shape_b1": [
+        1,
+        6
+      ],
+      "shape_b2": [
+        2,
+        6
+      ],
+      "shape_rectangle": [
+        1,
+        6
+      ],
+      "finite": true,
+      "warmup_runs": 3,
+      "timed_runs": 10,
+      "forward_ms_p50": 113.75524999948539,
+      "forward_ms_p95": 206.81652999992357,
+      "forward_ms_samples": [
+        76.27529999990657,
+        76.4789999993809,
+        105.50630000034289,
+        144.1914999995788,
+        247.26639999971667,
+        157.37780000017665,
+        134.21639999978652,
+        103.14549999930023,
+        122.00419999862788,
+        94.8259999986476
+      ],
+      "peak_process_rss_bytes": 529285120,
+      "measured_at": "2026-10-28T07:58:08.971060+00:00"
+    },
+    {
+      "slug": "densenet121",
+      "ok": true,
+      "runtime": {
+        "torch": "2.14.0+cpu",
+        "torchvision": "0.29.0+cpu",
+        "Pillow": "12.3.0"
+      },
+      "threads": 2,
+      "validation_source": "deterministic synthetic RGB images; no ground truth",
+      "device": "cpu",
+      "strict": true,
+      "weights_only": true,
+      "weights": null,
+      "asset_check_ms": 80.55579999927431,
+      "asset_hash": "89d6591834ea7b55efe0a5607284fdeac392061a8c215ef30abbf48e8036b2ff",
+      "weight_sha256": "b8b6eb739dbe0590464fac40d5c87e4473b11c1162332b4da4e97bc13cae79d6",
+      "classes_hash": "df62ab880bf84cf7ba81ca113a8eb9f135864ba6e3a9d5c4e7f4732eb764d46c",
+      "preprocess_hash": "e4a62a818de5ac98bdc714a98b6748a7d070443cd055d4104c07351341a3bbe3",
+      "protocol_hash": "f0eb84ad7725549c50e343eb0ededd9e5baea2e14843c484d7b11c41621c215a",
+      "param_count": 6960006,
+      "load_ms": 301.9743999993807,
+      "preprocess_two_images_ms": 3.1822999990254175,
+      "input_b1": [
+        1,
+        3,
+        224,
+        224
+      ],
+      "input_rectangle": [
+        1,
+        3,
+        224,
+        448
+      ],
+      "shape_b1": [
+        1,
+        6
+      ],
+      "shape_b2": [
+        2,
+        6
+      ],
+      "shape_rectangle": [
+        1,
+        6
+      ],
+      "finite": true,
+      "warmup_runs": 3,
+      "timed_runs": 10,
+      "forward_ms_p50": 87.70034999997733,
+      "forward_ms_p95": 104.36371499999949,
+      "forward_ms_samples": [
+        109.73910000029719,
+        87.16180000010354,
+        87.89669999896432,
+        85.86839999952645,
+        82.3989000000438,
+        72.74139999935869,
+        97.79379999963567,
+        97.00940000038827,
+        87.50400000099035,
+        95.09149999939837
+      ],
+      "peak_process_rss_bytes": 529285120,
+      "measured_at": "2026-10-28T07:58:11.004143+00:00"
+    },
+    {
+      "slug": "convnext_tiny",
+      "ok": true,
+      "runtime": {
+        "torch": "2.14.0+cpu",
+        "torchvision": "0.29.0+cpu",
+        "Pillow": "12.3.0"
+      },
+      "threads": 2,
+      "validation_source": "deterministic synthetic RGB images; no ground truth",
+      "device": "cpu",
+      "strict": true,
+      "weights_only": true,
+      "weights": null,
+      "asset_check_ms": 296.66139999972074,
+      "asset_hash": "3bf3fc9efc8442ab8975d3dec6539f054ca7500155df4b5b5b18b34dc33769ff",
+      "weight_sha256": "410fe9877258df3b43f4e9b20fcef71173d23ab1d26d81458e8882777bf4bdef",
+      "classes_hash": "df62ab880bf84cf7ba81ca113a8eb9f135864ba6e3a9d5c4e7f4732eb764d46c",
+      "preprocess_hash": "e4a62a818de5ac98bdc714a98b6748a7d070443cd055d4104c07351341a3bbe3",
+      "protocol_hash": "f0eb84ad7725549c50e343eb0ededd9e5baea2e14843c484d7b11c41621c215a",
+      "param_count": 27824742,
+      "load_ms": 875.8447999989585,
+      "preprocess_two_images_ms": 6.43109999873559,
+      "input_b1": [
+        1,
+        3,
+        224,
+        224
+      ],
+      "input_rectangle": [
+        1,
+        3,
+        224,
+        448
+      ],
+      "shape_b1": [
+        1,
+        6
+      ],
+      "shape_b2": [
+        2,
+        6
+      ],
+      "shape_rectangle": [
+        1,
+        6
+      ],
+      "finite": true,
+      "warmup_runs": 3,
+      "timed_runs": 10,
+      "forward_ms_p50": 80.31920000030368,
+      "forward_ms_p95": 101.04755000065776,
+      "forward_ms_samples": [
+        113.0594000005658,
+        83.91589999882854,
+        81.5124000000651,
+        86.36640000077023,
+        77.26800000091316,
+        82.96829999926558,
+        79.12600000054226,
+        71.59959999989951,
+        76.76179999907617,
+        69.01010000001406
+      ],
+      "peak_process_rss_bytes": 592502784,
+      "measured_at": "2026-10-28T07:58:14.003682+00:00"
+    }
+  ]
+}

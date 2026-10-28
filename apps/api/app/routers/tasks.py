@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Header
 from fastapi.responses import FileResponse
 from infer.spec import COMPARE_BASELINE_LIMIT, EVAL_BASELINE_LIMIT
 from pydantic import BaseModel, Field
@@ -10,9 +10,8 @@ from app.authz import get_current_user
 from app.config import get_settings
 from app.db.models import User
 from app.deps import get_db
-from app.errors import AppError
 from app.services.records import maybe_mark_advisor_seen
-from app.services.storage import safe_rel_path
+from app.services.task_artifacts import TaskArtifacts
 from app.services.tasks import (
     create_compare_task,
     create_eval_task,
@@ -37,25 +36,27 @@ class EvalIn(BaseModel):
 
 
 @router.post("/compare")
-def create_compare(body: CompareIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)) -> dict:
+def create_compare(body: CompareIn, db: Session = Depends(get_db), user: User = Depends(get_current_user), idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")) -> dict:
     task = create_compare_task(
         db,
         user,
         batch_id=body.batch_id,
         baseline_version_ids=body.baseline_version_ids,
         student_version_id=body.student_version_id,
+        idempotency_key=idempotency_key,
     )
     return serialize_task(db, get_visible_task(db, task.id, user))
 
 
 @router.post("/eval")
-def create_eval(body: EvalIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)) -> dict:
+def create_eval(body: EvalIn, db: Session = Depends(get_db), user: User = Depends(get_current_user), idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")) -> dict:
     task = create_eval_task(
         db,
         user,
         dataset_version_id=body.dataset_version_id,
         baseline_version_ids=body.baseline_version_ids,
         student_version_id=body.student_version_id,
+        idempotency_key=idempotency_key,
     )
     return serialize_task(db, get_visible_task(db, task.id, user))
 
@@ -94,13 +95,7 @@ def get_file(
     user: User = Depends(get_current_user),
 ):
     task = get_visible_task(db, task_id, user)
-    cleaned = safe_rel_path(rel_path)
-    root = (get_settings().storage_path / "tasks" / task.id).resolve()
-    path = (root / cleaned).resolve()
-    if root not in path.parents and path != root:
-        raise AppError("非法路径", code="BAD_PATH", stage="file", status_code=400)
-    if not path.is_file():
-        raise AppError("文件不存在", code="NOT_FOUND", stage="file", status_code=404)
+    path = TaskArtifacts(db, task, get_settings()).file(rel_path)
     return FileResponse(path)
 
 
@@ -111,9 +106,7 @@ def get_bundle(
     user: User = Depends(get_current_user),
 ):
     task = get_visible_task(db, task_id, user)
-    path = get_settings().storage_path / "tasks" / task.id / "bundle.zip"
-    if not path.is_file():
-        raise AppError("打包文件尚未生成", code="BUNDLE_MISSING", stage="file", status_code=404)
+    path = TaskArtifacts(db, task, get_settings()).file("bundle.zip")
     return FileResponse(
         path,
         filename=f"{task.id}_drawio.zip",

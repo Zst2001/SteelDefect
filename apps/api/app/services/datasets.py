@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from urllib.parse import quote
+
 from infer.spec import NEU_CLASS_MAP, NEU_LEGEND
 from sqlalchemy import case, func
 from sqlalchemy.orm import Session
@@ -103,7 +105,12 @@ def _dataset_payload(dataset: Dataset, version_payload: list[dict]) -> dict:
 
 
 def list_dataset_catalog(db: Session, user: User) -> dict:
-    rows = db.query(Dataset).all()
+    # Classification batches are browsed through their authorized task result.
+    # Do not render them as empty segmentation datasets with NEU mask legends.
+    rows = db.query(Dataset).filter(
+        ~Dataset.versions.any(DatasetVersion.kind == "classification_batch")
+        | Dataset.versions.any(DatasetVersion.kind.in_(CATALOG_KINDS))
+    ).all()
     visible = [row for row in rows if can_view_dataset(user, row)]
     version_map: dict[str, list[DatasetVersion]] = {}
     all_version_ids: list[str] = []
@@ -126,6 +133,10 @@ def list_dataset_catalog(db: Session, user: User) -> dict:
 def dataset_detail_payload(db: Session, user: User, dataset_id: str) -> dict:
     dataset = get_visible_dataset(db, user, dataset_id)
     versions = catalog_versions(db, dataset.id)
+    if not versions and db.query(DatasetVersion.id).filter_by(
+        dataset_id=dataset.id, kind="classification_batch"
+    ).first() is not None:
+        raise AppError("分类批次请从对应任务查看", code="NOT_FOUND", stage="file", status_code=404)
     stats = version_stats(db, [version.id for version in versions])
     version_payload = []
     class_map = None
@@ -194,7 +205,8 @@ def page_samples(
                 "height": sample.height,
                 "has_mask": sample.mask_uri is not None,
                 "preview_url": (
-                    f"/api/datasets/{dataset.id}/versions/{version.id}/samples/{sample.sample_key}/preview"
+                    f"/api/datasets/{dataset.id}/versions/{version.id}"
+                    f"/samples/{quote(sample.sample_key, safe='')}/preview"
                 ),
             }
         )

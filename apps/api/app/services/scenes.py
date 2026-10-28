@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
+
 from app.errors import AppError
 
 EMPTY_MESSAGE = "缺陷检测尚未接入权重与推理，不能提交任务。"
@@ -38,8 +40,17 @@ SCENES: list[dict] = [
 _BY_ID = {row["id"]: row for row in SCENES}
 
 
+def classification_ready() -> bool:
+    from infer.classification import catalog
+    return any(row.get("available") for row in catalog())
+
+
 def list_scenes() -> dict:
-    return {"scenes": SCENES}
+    scenes = deepcopy(SCENES)
+    for task in scenes[0]["tasks"]:
+        if task["kind"] == "classification":
+            task["status"] = "open" if classification_ready() else "empty"
+    return {"scenes": scenes}
 
 
 def detection_status(scene: str) -> dict:

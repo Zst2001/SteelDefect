@@ -27,7 +27,7 @@ def test_group_models_splits_builtin_mine_shared() -> None:
     assert [row["name"] for row in grouped["shared"]] == ["Shared"]
 
 
-def test_success_task_marks_bundle_ready() -> None:
+def test_success_alone_does_not_mark_bundle_ready() -> None:
     task = SimpleNamespace(
         id="t1",
         type="compare",
@@ -37,7 +37,8 @@ def test_success_task_marks_bundle_ready() -> None:
         created_at=datetime(2026, 9, 14),
     )
     payload = _task_payload(task)
-    assert payload["bundle_ready"] is True
+    assert payload["bundle_ready"] is False  # No artifact/ZIP evidence supplied.
+    assert payload["bundle_unavailable_reason"]
     assert payload["type_label"] == "快速对比"
     assert payload["has_gt"] is False
 

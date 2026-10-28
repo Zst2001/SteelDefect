@@ -23,6 +23,9 @@ Thumbs.db
 assets/baselines/neu/best_deeplabv3.pth
 assets/baselines/neu/best_pspnet.pth
 
+# Administrator-provided NEU-CLS deployment assets; install locally from verified exports.
+assets/classification/neu_cls_v1/
+
 # Full NEU corpus is seeded from disk; do not commit the image files.
 assets/datasets/neu/images/*
 !assets/datasets/neu/images/.gitkeep

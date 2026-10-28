@@ -2,12 +2,15 @@ from __future__ import annotations
 
 from sqlalchemy.orm import Session, selectinload
 
-from app.db.models import AuditLog, Sample, Task, TaskModel, User
+from app.db.models import AuditLog, ModelVersion, Sample, Task, TaskModel, TaskSample, User
 from app.errors import AppError
+from app.config import get_settings
+from app.services.task_artifacts import TaskArtifacts
 from app.services.demo import create_demo_task
 from app.services.demo_identity import DemoIdentity
 from app.services.tasks import (
     TASK_TYPE_LABELS,
+    _can_view_task,
     create_compare_task,
     create_eval_task,
     get_visible_task,
@@ -15,7 +18,7 @@ from app.services.tasks import (
 from app.util_time import new_id, utcnow
 
 DONE = {"success", "partial_success"}
-LAB_TYPES = {"compare", "eval"}
+LAB_TYPES = {"compare", "eval", "classification"}
 PAGE_SIZE_MAX = 50
 
 
@@ -26,6 +29,17 @@ def _iso(value) -> str | None:
 def _require_owner(task: Task, user: User) -> None:
     if task.creator_id != user.id:
         raise AppError("只能操作本人任务", code="FORBIDDEN", stage="auth", status_code=403)
+
+
+def _locked_visible_record(db: Session, task_id: str, user: User) -> Task:
+    # Authorize before locking, then refresh and recheck after acquiring the row.
+    # A withdrawal/read/archive can have committed since the first visibility check.
+    get_visible_task(db, task_id, user)
+    task = (db.query(Task).filter_by(id=task_id).populate_existing()
+            .with_for_update().one_or_none())
+    if task is None or not _can_view_task(task, user):
+        raise AppError("任务不存在", code="NOT_FOUND", stage="auth", status_code=404)
+    return task
 
 
 def _write_audit(db: Session, *, actor_id: str, action: str, target_id: str, reason: str) -> None:
@@ -65,10 +79,10 @@ def record_flags(task: Task, user: User) -> dict:
             and not submitted
         ),
         "can_withdraw": owner and submitted and task.advisor_seen_at is None,
-        "can_rerun": owner and not task.archived and task.type in {"compare", "eval", "demo"},
+        "can_rerun": owner and not task.archived and task.type in {"compare", "eval", "demo", "classification"},
         "can_archive": owner,
         "can_note": owner,
-        "can_analyze": task.type in LAB_TYPES and task.status in DONE,
+        "can_analyze": task.type in {"compare", "eval"} and task.status in DONE,
     }
 
 
@@ -82,7 +96,7 @@ def serialize_record(db: Session, task: Task, user: User) -> dict:
         "status": task.status,
         "has_gt": bool(task.has_gt) if task.type != "demo" else False,
         "error_summary": task.error_summary,
-        "bundle_ready": task.status in DONE,
+        **TaskArtifacts(db, task, get_settings()).bundle_state(),
         "created_at": _iso(task.created_at),
         "creator_id": task.creator_id,
         "creator_username": _creator_name(db, task),
@@ -93,6 +107,8 @@ def serialize_record(db: Session, task: Task, user: User) -> dict:
 
 
 def _open_path(task: Task) -> str:
+    if task.type == "classification":
+        return f"/classification/{task.id}"
     if task.type == "eval":
         return f"/eval/{task.id}"
     if task.type == "demo":
@@ -103,6 +119,7 @@ def _open_path(task: Task) -> str:
 def maybe_mark_advisor_seen(db: Session, task: Task, user: User) -> None:
     if user.role != "advisor":
         return
+    task = _locked_visible_record(db, task.id, user)
     if task.submitted_to_advisor_at is None or task.advisor_seen_at is not None:
         return
     task.advisor_seen_at = utcnow()
@@ -145,7 +162,7 @@ def list_records(
     if scope != "inbox":
         query = query.filter(Task.archived.is_(archived))
     if type:
-        if type not in {"compare", "eval", "demo"}:
+        if type not in {"compare", "eval", "demo", "classification"}:
             raise AppError("任务类型无效", code="BAD_TYPE", stage="protocol", status_code=400)
         if scope == "inbox" and type == "demo":
             return {"page": page, "page_size": page_size, "total": 0, "items": []}
@@ -170,7 +187,7 @@ def patch_record(
     note: str | None = None,
     archived: bool | None = None,
 ) -> Task:
-    task = get_visible_task(db, task_id, user)
+    task = _locked_visible_record(db, task_id, user)
     _require_owner(task, user)
     if note is not None:
         text = note.strip()
@@ -187,7 +204,7 @@ def patch_record(
 
 
 def submit_to_advisor(db: Session, user: User, task_id: str) -> Task:
-    task = get_visible_task(db, task_id, user)
+    task = _locked_visible_record(db, task_id, user)
     _require_owner(task, user)
     if task.type not in LAB_TYPES:
         raise AppError("公开演示不能提交导师", code="DEMO_NO_SUBMIT", stage="protocol", status_code=400)
@@ -208,7 +225,7 @@ def submit_to_advisor(db: Session, user: User, task_id: str) -> Task:
 
 
 def withdraw_from_advisor(db: Session, user: User, task_id: str) -> Task:
-    task = get_visible_task(db, task_id, user)
+    task = _locked_visible_record(db, task_id, user)
     _require_owner(task, user)
     if task.submitted_to_advisor_at is None:
         raise AppError("尚未提交导师", code="NOT_SUBMITTED", stage="protocol", status_code=400)
@@ -223,8 +240,8 @@ def withdraw_from_advisor(db: Session, user: User, task_id: str) -> Task:
     return task
 
 
-def _model_ids(task: Task) -> tuple[list[str], str | None]:
-    models = sorted(task.models, key=lambda row: row.sort_order)
+def _model_ids(db: Session, task: Task) -> tuple[list[str], str | None]:
+    models = db.query(TaskModel).filter_by(task_id=task.id).order_by(TaskModel.sort_order).populate_existing().with_for_update().all()
     baselines = [row.model_version_id for row in models if row.role == "baseline"]
     students = [row.model_version_id for row in models if row.role == "student_under_test"]
     return baselines, students[0] if students else None
@@ -235,9 +252,25 @@ def rerun_record(db: Session, user: User, task_id: str) -> Task:
     _require_owner(source, user)
     if source.archived:
         raise AppError("已归档任务不能再跑", code="ARCHIVED", stage="protocol", status_code=400)
-    baselines, student_id = _model_ids(source)
+    from app.services.input_freeze import verify_inputs, lock_version
+    from app.services.submission import lock_user
+    lock_user(db, user)
+    lock_version(db, source.dataset_version_id)
+    source = db.query(Task).filter_by(id=source.id).populate_existing().with_for_update().one()
+    _require_owner(source, user)
+    if source.archived:
+        raise AppError("已归档任务不能再跑", code="ARCHIVED", stage="protocol", status_code=400)
+    baselines, student_id = _model_ids(db, source)
+    verify_inputs(db, source, get_settings())
     if not baselines:
         raise AppError("原任务没有可再跑的模型", code="NO_MODELS", stage="protocol", status_code=400)
+    if source.type == "classification":
+        from app.services.classification import create_classification_task
+        versions = [db.get(ModelVersion, vid) for vid in baselines]
+        if student_id or any(version is None for version in versions):
+            raise AppError("分类任务模型不完整或角色不匹配", code="MODEL_ROLE_INVALID", stage="protocol", status_code=400)
+        return create_classification_task(db, user, batch_id=source.dataset_version_id,
+                                          model_slugs=[version.slug for version in versions])
     if source.type == "compare":
         return create_compare_task(
             db,
@@ -255,11 +288,8 @@ def rerun_record(db: Session, user: User, task_id: str) -> Task:
             student_version_id=student_id,
         )
     if source.type == "demo":
-        keys = []
-        for link in sorted(source.samples, key=lambda row: row.sort_order):
-            sample = db.get(Sample, link.sample_id)
-            if sample:
-                keys.append(sample.sample_key)
+        samples = db.query(Sample).join(TaskSample, Sample.id == TaskSample.sample_id).filter(TaskSample.task_id == source.id).order_by(TaskSample.sort_order).populate_existing().with_for_update().all()
+        keys = [sample.sample_key for sample in samples]
         if not keys:
             raise AppError("原任务没有预备样例", code="NO_SAMPLES", stage="protocol", status_code=400)
         identity = DemoIdentity(sid=new_id(), user=user, ip="0.0.0.0", ip_hash="rerun")

@@ -6,6 +6,7 @@ Parameter count is every nn.Parameter (not requires_grad-only).
 
 from __future__ import annotations
 
+import math
 import platform
 import sys
 import time
@@ -79,6 +80,7 @@ def measure_cpu_forward(
 
 def fps_from_latency_ms(latency_ms: float | None, batch: int = BATCH) -> float | None:
     """Throughput of the same dummy-forward protocol. Not paper / CUDA FPS."""
-    if latency_ms is None or latency_ms <= 0:
+    if latency_ms is None or not math.isfinite(latency_ms) or latency_ms <= 0:
         return None
-    return round((1000.0 * max(int(batch), 1)) / float(latency_ms), 3)
+    fps = (1000.0 * max(int(batch), 1)) / float(latency_ms)
+    return round(fps, 3) if math.isfinite(fps) else None

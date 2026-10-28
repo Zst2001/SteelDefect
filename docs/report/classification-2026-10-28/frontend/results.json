@@ -1,0 +1,8 @@
+{
+  "checks": 52,
+  "browser": "151.0.7922.34",
+  "apiRequests": 78,
+  "unexpected": [],
+  "errors": [],
+  "environment": "All business data mocked; no production API, DB, Redis, Docker, LLM or inference"
+}

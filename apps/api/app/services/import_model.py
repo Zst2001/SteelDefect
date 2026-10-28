@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+import logging
 from pathlib import Path
 
 from fastapi import UploadFile
@@ -14,7 +15,24 @@ from app.db.models import Model, ModelVersion, PreprocessSpecRow, User, Weight
 from app.errors import AppError
 from app.services.storage import sha256_file
 from app.util_time import new_id
-from rq import Queue
+from app.services.dispatch import enqueue, apply_admit_delivery, Delivery
+from app.services.submission import lock_user, request_id
+import hashlib
+
+logger = logging.getLogger(__name__)
+
+
+def finish_admit_dispatch(db, version, settings, delivery):
+    apply_admit_delivery(db, version, delivery)
+    current = db.query(ModelVersion).filter_by(id=version.id).populate_existing().with_for_update().one()
+    if current.fail_stage == "queue":
+        try:
+            report = read_report(settings, version.id) or {}
+            report.update(status=current.status, fail_stage=current.fail_stage, message=current.fail_message)
+            write_report(settings, version.id, report)
+        except (OSError, ValueError) as exc:
+            logger.error("admit dispatch report unavailable version=%s error=%s", version.id, type(exc).__name__)
+    db.commit()
 
 ENTRY_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 NAME_RE = re.compile(r"^[\w\u4e00-\u9fff][\w\u4e00-\u9fff\-_. ]{0,80}$")
@@ -72,6 +90,7 @@ async def import_student_model(
     py_file: UploadFile,
     pth_file: UploadFile,
     settings: Settings | None = None,
+    idempotency_key: str | None = None,
 ) -> ModelVersion:
     settings = settings or get_settings()
     name = (name or "").strip()
@@ -113,13 +132,32 @@ async def import_student_model(
         raise AppError("源码必须是 UTF-8 文本", code="BAD_ENCODING", stage="file", status_code=400) from exc
 
     preprocess = db.query(PreprocessSpecRow).filter(PreprocessSpecRow.name == "neu_200").one()
-    version_id = new_id()
+    lock_user(db, user)
+    version_id = request_id("import", user.id, idempotency_key)
+    # User lock serializes submissions; locking reads also bypass any older RR snapshot.
+    previous = db.query(ModelVersion).filter_by(id=version_id).populate_existing().with_for_update().one_or_none()
+    if previous is not None:
+        previous_model = db.query(Model).filter_by(id=previous.model_id).populate_existing().with_for_update().one()
+        weight = db.query(Weight).filter_by(version_id=version_id).populate_existing().with_for_update().first()
+        if (previous_model.name != name or previous.entry_symbol != entry_symbol or previous.num_classes != num_classes
+                or previous.in_channels != in_channels or previous.requires_cuda != requires_cuda
+                or previous.source_sha256 != hashlib.sha256(py_bytes).hexdigest()
+                or weight is None or weight.sha256 != hashlib.sha256(pth_bytes).hexdigest()):
+            raise AppError("同一幂等键不能用于不同模型", code="IDEMPOTENCY_CONFLICT", stage="protocol", status_code=409)
+        return previous
     dest = model_dir(settings, version_id)
-    dest.mkdir(parents=True, exist_ok=True)
     py_path = dest / "model.py"
     pth_path = dest / "weights.pth"
-    py_path.write_bytes(py_bytes)
-    pth_path.write_bytes(pth_bytes)
+    try:
+        # Filesystem safety is independent of transaction rollback. Never reuse a directory,
+        # including an orphan from an earlier failed insert; leave it for manual diagnosis.
+        dest.mkdir(parents=True, exist_ok=False)
+        with py_path.open("xb") as handle:
+            handle.write(py_bytes)
+        with pth_path.open("xb") as handle:
+            handle.write(pth_bytes)
+    except FileExistsError as exc:
+        raise AppError("模型版本存储已存在，拒绝覆盖", code="MODEL_STORAGE_CONFLICT", stage="file", status_code=409) from exc
 
     model = Model(id=new_id(), owner_id=user.id, name=name, source="student")
     version = ModelVersion(
@@ -197,6 +235,7 @@ async def import_student_model(
         return version
 
     version.status = "checking"
+    version.fail_stage, version.fail_message = "queue", "QUEUE_PENDING: 隔离检查尚未确认入队"
     write_report(
         settings,
         version.id,
@@ -210,17 +249,15 @@ async def import_student_model(
     )
     db.commit()
     invalidate_after_write(None, user.id)
-    enqueue_admit(version.id, settings)
+    finish_admit_dispatch(db, version, settings, enqueue_admit(version.id, settings))
     return version
 
 
 def enqueue_admit(version_id: str, settings: Settings | None = None) -> None:
     settings = settings or get_settings()
-    queue = Queue(settings.rq_queue_name, connection=rq_connection())
-    queue.enqueue(
-        "apps.worker.jobs.run_admit",
-        version_id,
-        job_timeout=settings.admit_job_timeout_sec,
-        result_ttl=86400,
-        failure_ttl=86400,
-    )
+    try:
+        digest = sha256_file(model_dir(settings, version_id) / "model.py")[:16]
+    except OSError:
+        return Delivery("rejected", f"admit-{version_id}-missing")
+    return enqueue(settings, "apps.worker.jobs.run_admit", version_id, settings.admit_job_timeout_sec,
+                   job_id=f"admit-{version_id}-{digest}")

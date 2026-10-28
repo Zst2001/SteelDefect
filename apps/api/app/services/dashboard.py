@@ -4,6 +4,8 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.db.models import Model, ModelVersion, Task, User
 from app.services.tasks import TASK_TYPE_LABELS
+from app.config import get_settings
+from app.services.task_artifacts import BUNDLE_UNAVAILABLE, TaskArtifacts
 
 NOTICES = [
     {
@@ -14,10 +16,9 @@ NOTICES = [
 ]
 
 ACTIVE_STATUSES = {"queued", "running"}
-DONE_FOR_BUNDLE = {"success", "partial_success"}
 
 
-def _task_payload(task: Task) -> dict:
+def _task_payload(task: Task, db: Session | None = None) -> dict:
     return {
         "id": task.id,
         "type": task.type,
@@ -25,7 +26,9 @@ def _task_payload(task: Task) -> dict:
         "status": task.status,
         "has_gt": task.has_gt,
         "error_summary": task.error_summary,
-        "bundle_ready": task.status in DONE_FOR_BUNDLE,
+        **(TaskArtifacts(db, task, get_settings()).bundle_state() if db is not None else {
+            "bundle_ready": False, "bundle_unavailable_reason": BUNDLE_UNAVAILABLE,
+        }),
         "created_at": task.created_at.isoformat() + "Z",
     }
 
@@ -49,7 +52,7 @@ def build_dashboard(db: Session, user: User) -> dict:
         .limit(20)
         .all()
     )
-    payload_tasks = [_task_payload(task) for task in tasks]
+    payload_tasks = [_task_payload(task, db) for task in tasks]
     recent_versions = (
         db.query(ModelVersion)
         .options(selectinload(ModelVersion.model))

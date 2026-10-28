@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, File, Form, UploadFile
+from fastapi import APIRouter, Header, Depends, File, Form, UploadFile
 from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session, selectinload
@@ -14,9 +14,11 @@ from app.errors import AppError
 from app.services.adapt import apply_adapt, build_proposal
 from app.services.import_model import import_student_model, model_dir
 from app.services.models import (
+    assert_model_content_access,
     can_view_version,
     group_model_items,
     list_visible_versions,
+    is_classification_version,
     serialize_version,
 )
 from app.services.perf import request_measure, serialize_perf
@@ -50,6 +52,8 @@ def _visible_version(db: Session, version_id: str, user: User) -> ModelVersion:
     version = _load_version(db, version_id)
     if version is None or not can_view_version(user, version.model, version):
         raise AppError("模型不存在", code="NOT_FOUND", stage="auth", status_code=404)
+    if is_classification_version(db, version):
+        raise AppError("分类模型请从钢铁缺陷分类页访问", code="TASK_KIND_MISMATCH", stage="protocol", status_code=409)
     return version
 
 
@@ -68,6 +72,7 @@ def list_models(db: Session = Depends(get_db), user: User = Depends(get_current_
 
 @router.post("/import")
 async def import_model(
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
     name: str = Form(...),
     entry_symbol: str = Form("build_model"),
     num_classes: int = Form(4),
@@ -82,6 +87,7 @@ async def import_model(
         db,
         user,
         name=name,
+        idempotency_key=idempotency_key,
         entry_symbol=entry_symbol,
         num_classes=num_classes,
         in_channels=in_channels,
@@ -167,6 +173,7 @@ def download_admit_log(
     user: User = Depends(get_current_user),
 ):
     version = _visible_version(db, version_id, user)
+    assert_model_content_access(user, version.model, version)
     path = model_dir(get_settings(), version.id) / "admit.log"
     if not path.is_file():
         raise AppError("还没有检查日志", code="LOG_MISSING", stage="file", status_code=404)
@@ -203,9 +210,9 @@ def get_perf(version_id: str, db: Session = Depends(get_db), user: User = Depend
 
 
 @router.post("/{version_id}/perf")
-def post_perf(version_id: str, db: Session = Depends(get_db), user: User = Depends(get_current_user)) -> dict:
+def post_perf(version_id: str, db: Session = Depends(get_db), user: User = Depends(get_current_user), idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")) -> dict:
     version = _visible_version(db, version_id, user)
-    request_measure(db, version, version.model)
+    request_measure(db, version, version.model, idempotency_key=idempotency_key)
     db.refresh(version)
     return serialize_version(db, version, version.model, include_report=True)
 

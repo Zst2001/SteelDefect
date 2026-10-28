@@ -82,6 +82,11 @@ def db() -> Session:
 
 @pytest.fixture(autouse=True)
 def no_llm(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Legacy authorization fixtures have metadata-only asset URIs. C input I/O is
+    # tested separately with actual temporary files, never these real asset paths.
+    monkeypatch.setattr("app.services.tasks.freeze_inputs", lambda *a: None)
+    monkeypatch.setattr("app.services.demo.freeze_inputs", lambda *a: None)
+    monkeypatch.setattr("app.services.input_freeze.verify_inputs", lambda *a: {})
     monkeypatch.setattr("app.services.assistant.llm_ready", lambda settings=None: False)
     monkeypatch.setattr("app.services.demo.invalidate_after_write", lambda *args, **kwargs: None)
     monkeypatch.setattr("app.services.demo._enqueue_task", lambda *args, **kwargs: None)

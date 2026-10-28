@@ -4,36 +4,47 @@
       <header class="topbar">
         <div>
           <p class="eyebrow">实验台</p>
-          <h1>科研助手</h1>
+          <h1>科研助手 <span>Research assistant</span></h1>
+          <p class="top-subtitle">围绕实验结果、研究资料与模型版本展开讨论</p>
         </div>
         <div class="top-actions">
-          <button type="button" class="ghost" @click="newConversation()">新对话</button>
-          <button type="button" class="ghost" :class="{ on: listOpen }" @click="listOpen = !listOpen">对话列表</button>
+          <button type="button" class="ghost new-chat" @click="newConversation()"><el-icon><Plus /></el-icon>新对话</button>
+          <button type="button" class="ghost" :class="{ on: listOpen }" @click="listOpen = !listOpen"><el-icon><ChatLineSquare /></el-icon>对话列表</button>
         </div>
       </header>
 
+      <div class="assistant-workspace">
+        <div class="conversation-column">
+          <div class="conversation-toolbar">
+          <div class="pills" role="tablist" aria-label="专科选择器">
+            <button type="button" class="pill" :class="{ on: specialty === 'academic' }" @click="switchSpecialty('academic')"><el-icon><Reading /></el-icon>学术</button>
+            <button type="button" class="pill" :class="{ on: specialty === 'segment' }" @click="switchSpecialty('segment')"><el-icon><Picture /></el-icon>分割</button>
+            <button type="button" class="pill" :class="{ on: specialty === 'model' }" @click="switchSpecialty('model')"><el-icon><Box /></el-icon>模型</button>
+          </div>
+          <span class="conversation-mode">{{ llmReady ? "工具证据 + 对话说明" : "工具证据模式" }}</span>
+          </div>
       <div ref="threadEl" class="thread">
         <p v-if="loadError" class="err">{{ loadError }}</p>
         <div v-if="!turns.length && !busy" class="hero">
+          <span class="welcome-icon"><el-icon><ChatDotRound /></el-icon></span>
+          <p class="welcome-label">STEEL LAB · {{ specialtyLabel(specialty) }}专科</p>
           <h2>从一条专科问题开始</h2>
-          <div class="pills" role="tablist" aria-label="专科选择器">
-            <button type="button" class="pill" :class="{ on: specialty === 'academic' }" @click="switchSpecialty('academic')">学术</button>
-            <button type="button" class="pill" :class="{ on: specialty === 'segment' }" @click="switchSpecialty('segment')">分割</button>
-            <button type="button" class="pill" :class="{ on: specialty === 'model' }" @click="switchSpecialty('model')">模型</button>
-          </div>
           <p class="muted">{{ heroHint }}</p>
           <ul class="suggest">
-            <li v-for="item in suggestions" :key="item" @click="draft = item">{{ item }}</li>
+            <li v-for="item in suggestions" :key="item"><button type="button" @click="draft = item"><el-icon><ChatLineSquare /></el-icon><span>{{ item }}</span><span class="suggest-arrow">↗</span></button></li>
           </ul>
+          <p class="welcome-note"><el-icon><InfoFilled /></el-icon>测量事实与文字建议分别呈现，精度数字以任务证据为准</p>
         </div>
 
         <div v-else class="feed">
           <p v-if="!turns.length && busy" class="muted">正在处理…</p>
           <article v-for="turn in turns" :key="turn.id" class="bubble" :class="turn.role">
+            <span class="message-avatar" :class="turn.role"><el-icon><User v-if="turn.role === 'user'" /><ChatDotRound v-else /></el-icon></span>
             <div v-if="turn.role === 'user'" class="bubble-inner user">
               <p class="copy">{{ turn.content }}</p>
             </div>
             <div v-else class="bubble-inner assistant">
+              <p class="message-author">Steel_lab <span>{{ specialtyLabel(specialty) }}助手</span></p>
               <p v-if="turn.streaming && !turn.writing" class="muted">正在生成…</p>
               <p v-if="turn.writing" class="copy" :class="{ streaming: turn.streaming }">{{ turn.writing }}</p>
               <p v-else-if="!turn.streaming && turn.llm_status === 'skipped' && turn.evidence_pack && !turn.evidence_pack.clarify" class="muted">
@@ -41,8 +52,8 @@
               </p>
               <p v-else-if="!turn.streaming && turn.llm_status === 'error'" class="muted">{{ writingFail }}</p>
 
-              <section v-if="kbPack(turn)" class="card">
-                <h3>{{ kbPack(turn)?.hit ? "命中语料" : "未命中" }}</h3>
+              <section v-if="kbPack(turn)" class="card evidence-card">
+                <h3><el-icon><Reading /></el-icon>{{ kbPack(turn)?.hit ? "命中语料" : "未命中" }}</h3>
                 <p v-if="kbPack(turn)?.via && kbPack(turn)?.hit" class="muted">
                   来源通道：{{ kbPack(turn)?.via === "milvus" ? "实验室知识库" : kbPack(turn)?.via === "session" ? "本会话已命中语料" : kbPack(turn)?.via === "local-fallback" ? "本站审定条目（向量库不可用）" : "本站审定条目" }}
                 </p>
@@ -55,9 +66,9 @@
                 </ul>
               </section>
 
-              <section v-if="taskPack(turn)" class="card">
+              <section v-if="taskPack(turn)" class="card evidence-card">
                 <p class="eyebrow">证据包 · 测量事实 / 规则判断</p>
-                <h3>{{ taskPack(turn)?.task?.type_label }} · {{ taskPack(turn)?.task?.id }}</h3>
+                <h3><el-icon><DocumentChecked /></el-icon>{{ taskPack(turn)?.task?.type_label }} · {{ taskPack(turn)?.task?.id }}</h3>
                 <dl class="facts">
                   <div><dt>状态</dt><dd>{{ taskStatusLabel(taskPack(turn)?.task?.status) }}</dd></div>
                   <div><dt>有 GT</dt><dd>{{ taskPack(turn)?.task?.has_gt ? "是" : "否" }}</dd></div>
@@ -72,7 +83,7 @@
                 </dl>
                 <ul class="judgements">
                   <li v-for="(item, index) in taskPack(turn)?.judgements ?? []" :key="index">
-                    <span class="grade">{{ gradeLabel(item.grade) }}</span>
+                    <span class="grade" :class="item.grade">{{ gradeLabel(item.grade) }}</span>
                     {{ item.text }}
                   </li>
                 </ul>
@@ -101,8 +112,8 @@
                 </ul>
               </section>
 
-              <section v-if="perfPack(turn)" class="card">
-                <h3>测参档案</h3>
+              <section v-if="perfPack(turn)" class="card evidence-card">
+                <h3><el-icon><DataAnalysis /></el-icon>测参档案</h3>
                 <p class="muted">{{ perfPack(turn)?.disclaimer || fpsDisclaimer }}</p>
                 <dl class="facts">
                   <div><dt>模型</dt><dd>{{ perfPack(turn)?.version?.name }}</dd></div>
@@ -181,10 +192,45 @@
               :placeholder="placeholder"
               @keydown.enter.exact.prevent="sendText()"
             />
-            <button type="button" class="send" :disabled="!canSend" @click="sendText()">发送</button>
+            <button type="button" class="send" :disabled="!canSend" @click="sendText()"><el-icon><Promotion /></el-icon>发送</button>
           </div>
+          <p class="composer-hint">Enter 发送 · Shift + Enter 换行<span>代跑与测参需确认后执行</span></p>
         </div>
       </footer>
+        </div>
+        <aside class="context-rail">
+          <section class="context-card">
+            <h2><el-icon><Connection /></el-icon>本次上下文</h2>
+            <p class="context-caption">{{ specialtyLabel(specialty) }}专科 · 手动选择</p>
+            <template v-if="specialty === 'segment' && selectedTask">
+              <div class="context-object"><span class="context-object-icon"><el-icon><Picture /></el-icon></span><div><strong>{{ selectedTask.type_label }}</strong><span>#{{ selectedTask.id.slice(0, 8) }}</span></div></div>
+              <dl class="context-facts">
+                <div><dt>任务状态</dt><dd>{{ taskStatusLabel(selectedTask.status) }}</dd></div>
+                <div><dt>样本数量</dt><dd>{{ selectedTask.n ?? "未提供" }}</dd></div>
+                <div><dt>配对 GT</dt><dd>{{ selectedTask.has_gt ? "有" : "无" }}</dd></div>
+                <div><dt>精度证据</dt><dd>{{ selectedTask.has_gt ? "以任务证据包为准" : "不可用" }}</dd></div>
+              </dl>
+              <router-link class="context-link" :to="taskPath(selectedTask.type, selectedTask.id)">打开任务页 <span>↗</span></router-link>
+            </template>
+            <template v-else-if="specialty === 'model' && selectedModel">
+              <div class="context-object"><span class="context-object-icon"><el-icon><Box /></el-icon></span><div><strong>{{ selectedModel.name }}</strong><span>#{{ selectedModel.id.slice(0, 8) }}</span></div></div>
+              <dl class="context-facts">
+                <div><dt>模型来源</dt><dd>{{ selectedModel.source === 'builtin' ? '内置模型' : '学生模型' }}</dd></div>
+                <div><dt>模型状态</dt><dd>{{ modelStatusLabel(selectedModel.status) }}</dd></div>
+              </dl>
+              <router-link class="context-link" :to="`/models/${selectedModel.id}`">打开模型卡 <span>↗</span></router-link>
+            </template>
+            <div v-else class="context-empty"><el-icon><Reading v-if="specialty === 'academic'" /><Connection v-else /></el-icon><strong>{{ specialty === 'academic' ? '从研究问题开始' : specialty === 'model' ? '尚未选择模型' : '尚未绑定任务' }}</strong><p>{{ specialty === 'academic' ? '检索命中的语料会展示在对话中，请结合原始来源核对引用。' : specialty === 'model' ? '在输入区选择模型版本，围绕测参或源码展开讨论。' : '在输入区选择已有对比或评测，查看真实任务上下文。' }}</p></div>
+          </section>
+          <section class="context-card evidence-guide">
+            <h2><el-icon><DocumentChecked /></el-icon>如何阅读回答</h2>
+            <div><span class="guide-mark measurement"></span><p><strong>测量事实</strong><span>任务结果与工具返回的数据</span></p></div>
+            <div><span class="guide-mark rule"></span><p><strong>规则判断</strong><span>对照平台协议给出的判断</span></p></div>
+            <div><span class="guide-mark speculation"></span><p><strong>推测与建议</strong><span>需进一步实验验证的方向</span></p></div>
+          </section>
+          <p class="context-footnote"><el-icon><InfoFilled /></el-icon>模型适配请从对应模型卡进入，科研助手不会修改或执行粘贴的源码。</p>
+        </aside>
+      </div>
     </section>
 
     <button v-if="listOpen" type="button" class="scrim" aria-label="关闭对话列表" @click="listOpen = false" />
@@ -213,6 +259,7 @@
 import { computed, nextTick, onMounted, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 import { ElMessage } from "element-plus";
+import { Box, ChatDotRound, ChatLineSquare, Connection, DataAnalysis, DocumentChecked, InfoFilled, Picture, Plus, Promotion, Reading, User } from "@element-plus/icons-vue";
 import type { UploadFile } from "element-plus";
 import { formatError, http } from "../api/http";
 import {
@@ -220,6 +267,8 @@ import {
   formatLatencyMs,
   formatParamCount,
   openAuthFile,
+  modelStatusLabel,
+  taskPath,
   taskStatusLabel,
 } from "../api/labels";
 
@@ -293,6 +342,8 @@ const studentId = ref("");
 const modelVersionId = ref("");
 const allModels = ref<ModelCard[]>([]);
 const codeSnippet = ref("");
+const selectedTask = computed(() => tasks.value.find((item) => item.id === selectedId.value));
+const selectedModel = computed(() => allModels.value.find((item) => item.id === modelVersionId.value));
 
 const canInfer = computed(
   () =>
@@ -715,365 +766,129 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-.chat-page {
-  position: relative;
-  height: 100vh;
-  background: var(--lab-canvas);
-  color: var(--lab-text);
-  overflow: hidden;
-}
-.stage {
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-}
-.topbar {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  padding: 18px 28px 8px;
-}
-.topbar h1 {
-  margin: 4px 0 0;
-  font-size: 22px;
-}
-.eyebrow {
-  color: var(--lab-fiducial);
-  font-family: var(--lab-font-mono);
-  letter-spacing: 0.16em;
-  font-size: 11px;
-  margin: 0;
-}
-.top-actions {
-  display: flex;
-  gap: 8px;
-}
-.ghost {
-  background: transparent;
-  color: var(--lab-muted);
-  border: 1px solid var(--lab-line);
-  border-radius: 999px;
-  padding: 7px 14px;
-  font: inherit;
-}
-.ghost.on,
-.ghost:hover {
-  color: var(--lab-fiducial);
-  border-color: var(--lab-fiducial);
-}
-.thread {
-  flex: 1;
-  overflow: auto;
-  padding: 8px 24px 16px;
-}
-.hero {
-  min-height: 100%;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  text-align: center;
-  gap: 16px;
-  padding-bottom: 24px;
-}
-.hero h2 {
-  margin: 0;
-  font-size: 32px;
-  font-weight: 650;
-  letter-spacing: 0.02em;
-}
-.pills {
-  display: flex;
-  gap: 8px;
-  padding: 4px;
-  border-radius: 999px;
-  background: var(--lab-well);
-  border: 1px solid var(--lab-line);
-}
-.pill {
-  border: 0;
-  background: transparent;
-  color: var(--lab-muted);
-  border-radius: 999px;
-  padding: 8px 18px;
-  font: inherit;
-}
-.pill.on {
-  background: var(--lab-panel);
-  color: var(--lab-text);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--lab-fiducial) 45%, transparent);
-}
-.suggest {
-  list-style: none;
-  margin: 8px 0 0;
-  padding: 0;
-  display: grid;
-  gap: 8px;
-  width: min(560px, 100%);
-}
-.suggest li {
-  border: 1px solid var(--lab-line);
-  border-radius: 999px;
-  padding: 10px 16px;
-  color: var(--lab-muted);
-  cursor: pointer;
-  text-align: left;
-  background: color-mix(in srgb, var(--lab-panel) 70%, transparent);
-}
-.suggest li:hover {
-  border-color: var(--lab-fiducial);
-  color: var(--lab-text);
-}
-.feed {
-  width: min(760px, 100%);
-  margin: 0 auto;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  padding-bottom: 12px;
-}
-.bubble.user {
-  align-self: flex-end;
-  max-width: 78%;
-}
-.bubble.assistant {
-  align-self: stretch;
-}
-.bubble-inner {
-  padding: 12px 16px;
-  border: 1px solid var(--lab-line);
-  background: var(--lab-panel);
-  border-radius: 16px;
-}
-.bubble-inner.user {
-  background: color-mix(in srgb, var(--lab-fiducial) 16%, var(--lab-panel));
-  border-color: color-mix(in srgb, var(--lab-fiducial) 45%, var(--lab-line));
-  border-radius: 16px 16px 4px 16px;
-}
-.copy {
-  white-space: pre-wrap;
-  line-height: 1.75;
-  margin: 0;
-}
-.copy.streaming::after {
-  content: "";
-  display: inline-block;
-  width: 7px;
-  height: 1em;
-  margin-left: 3px;
-  background: var(--lab-fiducial);
-  vertical-align: text-bottom;
-  animation: caret 1s step-end infinite;
-}
-@keyframes caret {
-  50% {
-    opacity: 0;
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .copy.streaming::after {
-    animation: none;
-  }
-}
-.card {
-  margin-top: 12px;
-  padding-top: 12px;
-  border-top: 1px solid var(--lab-line);
-}
-.card h3 {
-  margin: 0 0 8px;
-}
-.facts {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-  gap: 10px 16px;
-}
-.facts dt {
-  color: var(--lab-muted);
-  font-size: 12px;
-}
-.facts dd {
-  margin: 4px 0 0;
-  font-family: var(--lab-font-mono);
-}
-.judgements,
-.viz {
-  line-height: 1.7;
-}
-.grade {
-  color: var(--lab-fiducial);
-  font-family: var(--lab-font-mono);
-  font-size: 12px;
-  margin-right: 8px;
-}
-.muted,
-.err,
-.count,
-.meta,
-.rail-empty {
-  color: var(--lab-muted);
-  line-height: 1.7;
-}
-.err {
-  color: var(--lab-danger);
-}
-.dock {
-  padding: 0 24px 22px;
-  display: flex;
-  justify-content: center;
-}
-.capsule {
-  width: min(760px, 100%);
-  border: 1px solid var(--lab-line);
-  border-radius: 22px;
-  background: var(--lab-panel);
-  padding: 12px 14px 10px;
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.22);
-}
-.chips {
-  display: flex;
-  gap: 6px;
-  margin-bottom: 8px;
-}
-.chip {
-  background: transparent;
-  color: var(--lab-muted);
-  border: 1px solid transparent;
-  border-radius: 999px;
-  padding: 5px 12px;
-  cursor: pointer;
-  font: inherit;
-}
-.chip.on {
-  color: var(--lab-fiducial);
-  border-color: var(--lab-fiducial);
-}
-.attach {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  align-items: center;
-  margin-bottom: 8px;
-}
-.pick {
-  min-width: 240px;
-  flex: 1;
-}
-.more {
-  width: 100%;
-  color: var(--lab-muted);
-}
-.up {
-  padding: 12px;
-  color: var(--lab-muted);
-}
-.picks {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin: 8px 0;
-}
-.jump {
-  color: var(--lab-fiducial);
-}
-.input-row {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  gap: 10px;
-  align-items: end;
-}
-.send {
-  background: var(--lab-accent);
-  color: #fff;
-  border: 0;
-  border-radius: 999px;
-  padding: 8px 16px;
-  font: inherit;
-  min-height: 36px;
-}
-.send:disabled {
-  opacity: 0.45;
-}
-.capsule :deep(.el-textarea__inner) {
-  background: transparent;
-  box-shadow: none;
-  border-radius: 0;
-  padding: 4px 2px;
-}
-.scrim {
-  position: absolute;
-  inset: 0;
-  border: 0;
-  background: rgba(5, 7, 10, 0.45);
-  z-index: 2;
-}
-.drawer {
-  position: absolute;
-  top: 0;
-  right: 0;
-  width: min(300px, 86vw);
-  height: 100%;
-  background: var(--lab-rail);
-  border-left: 1px solid var(--lab-line);
-  transform: translateX(100%);
-  transition: transform 0.2s ease;
-  z-index: 3;
-  display: flex;
-  flex-direction: column;
-}
-.drawer.open {
-  transform: translateX(0);
-}
-.drawer-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 18px 16px 10px;
-}
-.drawer-head h2 {
-  margin: 0;
-  font-size: 16px;
-}
-.session-list {
-  list-style: none;
-  margin: 0;
-  padding: 8px;
-  overflow: auto;
-  flex: 1;
-}
-.session-list li {
-  padding: 10px 12px;
-  border: 1px solid transparent;
-  border-radius: 10px;
-  cursor: pointer;
-  margin-bottom: 6px;
-  background: var(--lab-panel);
-}
-.session-list li.on {
-  border-color: var(--lab-fiducial);
-}
-.spec {
-  display: block;
-  color: var(--lab-fiducial);
-  font-family: var(--lab-font-mono);
-  font-size: 11px;
-}
-.title {
-  display: block;
-  margin-top: 4px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.rail-empty {
-  padding: 0 16px 16px;
-  font-size: 13px;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .drawer {
-    transition: none;
-  }
-}
+.chat-page { position: relative; height: 100%; color: var(--lab-text); overflow: hidden; background: var(--lab-canvas); }
+.stage { display: flex; flex-direction: column; height: 100%; min-width: 0; }
+.topbar { display: flex; justify-content: space-between; align-items: center; flex: none; padding: 24px 28px 0; gap: 16px; }
+.eyebrow { margin: 0 0 7px; color: var(--lab-accent-2); font-size: 14px; letter-spacing: .16em; }
+.topbar h1 { margin: 0; font-size: 27px; letter-spacing: -.025em; }
+.topbar h1 span { font-size: 15px; font-weight: 400; color: #91a1b8; margin-left: 9px; letter-spacing: 0; }
+.top-subtitle { margin: 8px 0 0; font-size: 15px; color: var(--lab-muted); }
+.top-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.ghost { display: inline-flex; align-items: center; gap: 6px; background: #fff; color: #687c98; border: 1px solid #dce5f1; border-radius: 6px; padding: 8px 12px; font: inherit; font-size: 15px; cursor: pointer; }
+.ghost.on, .ghost:hover { color: var(--lab-accent-2); border-color: #9dbdee; }
+.ghost.new-chat { background: #edf4ff; color: #3676d9; border-color: #d4e4fc; }
+.assistant-workspace { display: grid; grid-template-columns: minmax(0, 1fr) 268px; flex: 1; min-height: 0; gap: 20px; padding: 22px 28px 24px; }
+.conversation-column { display: flex; flex-direction: column; min-width: 0; min-height: 0; border: 1px solid var(--lab-line); border-radius: 13px; background: #fff; box-shadow: 0 4px 20px #24456b05; overflow: hidden; }
+.conversation-toolbar { display: flex; justify-content: space-between; align-items: center; flex: none; border-bottom: 1px solid #e8eef6; padding: 12px 18px; gap: 10px; }
+.pills { display: flex; gap: 5px; padding: 3px; border-radius: 8px; background: #f2f6fc; }
+.pill { display: flex; align-items: center; gap: 6px; border: 1px solid transparent; border-radius: 6px; background: transparent; color: #8a9bb1; padding: 7px 14px; font: inherit; font-size: 15px; cursor: pointer; }
+.pill.on { color: #3976cf; background: #fff; border-color: #e0e8f4; box-shadow: 0 2px 4px #395b8a08; }
+.conversation-mode { font-size: 14px; color: #657a96; white-space: nowrap; }
+.thread { flex: 1; min-height: 0; overflow: auto; padding: 24px; background: linear-gradient(180deg, #fff, #fcfdff); }
+.hero { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100%; box-sizing: border-box; padding: 22px 0 15px; text-align: center; }
+.welcome-icon { display: grid; place-items: center; width: 61px; height: 61px; border-radius: 19px; background: #ebf3ff; border: 1px solid #dfebfc; color: #4b84da; font-size: 31px; box-shadow: 0 5px 12px #6c9ed414; margin-bottom: 16px; }
+.welcome-label { font-size: 14px; font-weight: 600; letter-spacing: .12em; color: #83a0c4; margin: 0 0 8px; }
+.hero h2 { margin: 0; font-size: 26px; font-weight: 600; letter-spacing: -.02em; }
+.hero > .muted { max-width: 480px; margin: 12px 0 19px; font-size: 15px; line-height: 1.9; }
+.suggest { list-style: none; margin: 0; padding: 0; display: grid; gap: 9px; width: min(480px, 100%); }
+.suggest li { border: 1px solid #e3eaf4; background: #fff; border-radius: 8px; overflow: hidden; }
+.suggest li:hover { border-color: #a2c1ee; background: #f8fbff; }
+.suggest button { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; padding: 13px 15px; font: inherit; font-size: 15px; color: #667e9c; border: 0; background: transparent; cursor: pointer; }
+.suggest button > .el-icon { color: #a2b8d5; font-size: 18px; }
+.suggest-arrow { margin-left: auto; color: #a4b6cf; }
+.welcome-note { display: flex; align-items: center; gap: 6px; margin: 19px 0 0; color: #657a96; font-size: 14px; line-height: 1.6; }
+.feed { width: min(880px, 100%); margin: 0 auto; display: flex; flex-direction: column; gap: 25px; padding: 2px 0 16px; }
+.bubble { display: flex; align-items: start; gap: 10px; min-width: 0; }
+.bubble.user { flex-direction: row-reverse; align-self: flex-end; max-width: 88%; }
+.bubble.assistant { align-self: stretch; }
+.message-avatar { display: grid; place-items: center; flex: none; width: 31px; height: 31px; border: 1px solid #dce9fa; border-radius: 10px; background: #e9f2ff; color: #4c82cb; font-size: 20px; }
+.message-avatar.user { background: #eff3f9; color: #7b91af; border-color: #e4eaf3; }
+.bubble-inner { min-width: 0; overflow-wrap: anywhere; }
+.bubble-inner.user { padding: 11px 15px; background: #edf4ff; border: 1px solid #dfebfc; border-radius: 12px 3px 12px 12px; color: #415f86; }
+.bubble-inner.assistant { flex: 1; padding-top: 6px; }
+.message-author { margin: 0 0 12px; font-size: 15px; font-weight: 600; color: #415d80; }
+.message-author span { font-size: 14px; font-weight: 400; color: #657a96; margin-left: 7px; }
+.copy { white-space: pre-wrap; line-height: 1.85; margin: 0; font-size: 16px; color: #4c617d; }
+.copy.streaming::after { content: ''; display: inline-block; width: 6px; height: 1em; margin-left: 3px; background: var(--lab-accent-2); vertical-align: text-bottom; animation: caret 1s step-end infinite; }
+@keyframes caret { 50% { opacity: 0; } }
+.card { margin-top: 14px; padding: 17px; border: 1px solid #dce7f5; border-radius: 9px; background: #fff; }
+.card h3 { display: flex; align-items: center; gap: 7px; margin: 0 0 11px; font-size: 16px; color: #4c729e; line-height: 1.6; }
+.card h3 .el-icon { color: #6a93cc; flex: none; }
+.card .eyebrow { font-size: 14px; margin-bottom: 7px; color: #657a96; }
+.card a { color: #5485c7; font-size: 15px; text-decoration: none; }
+.facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 15px; margin: 15px 0; padding: 14px; border-radius: 6px; background: #f7f9fd; }
+.facts dt { color: #657a96; font-size: 14px; }
+.facts dd { margin: 5px 0 0; color: #536e90; font-size: 15px; line-height: 1.6; }
+.judgements, .viz { padding: 0; margin: 12px 0 0; list-style: none; font-size: 15px; line-height: 1.8; }
+.judgements li { padding: 9px 0; border-bottom: 1px solid #eef2f8; color: #6c809b; }
+.judgements li:last-child { border: 0; }
+.judgements strong { font-size: 15px; color: #516b8c; }
+.grade { display: inline-block; padding: 1px 6px; margin-right: 7px; border-radius: 4px; color: #6187b3; background: #edf4fc; font-size: 14px; }
+.grade.measurement { color: #438c82; background: #eaf7f3; }
+.grade.rule { color: #5b83ba; background: #ecf3fe; }
+.grade.speculation { color: #a68b55; background: #fbf4e8; }
+.card.confirm { border-color: #eadbbe; background: #fffdf7; }
+.muted, .count, .meta, .rail-empty { color: var(--lab-muted); font-size: 15px; line-height: 1.75; }
+.err { color: var(--lab-danger); font-size: 15px; line-height: 1.7; }
+.dock { flex: none; padding: 0 18px 16px; max-height: 55%; overflow: auto; background: #fff; }
+.capsule { border: 1px solid #dbe6f5; border-radius: 10px; background: #fff; padding: 10px 12px 8px; box-shadow: 0 3px 12px #37669f08; }
+.chips { display: flex; gap: 5px; margin-bottom: 8px; }
+.chip { background: transparent; color: #99a8bd; border: 1px solid transparent; border-radius: 5px; padding: 4px 10px; cursor: pointer; font: inherit; font-size: 14px; }
+.chip.on { color: #5285cc; border-color: #d4e4fa; background: #f2f7ff; }
+.attach { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 8px; }
+.pick { min-width: 0; flex: 1; }
+.more { width: 100%; color: #8096b3; font-size: 14px; }
+.more summary { cursor: pointer; padding: 5px 0; }
+.up { padding: 12px; color: var(--lab-muted); }
+.picks { display: flex; flex-direction: column; gap: 6px; margin: 8px 0; align-items: start; }
+.jump { color: var(--lab-accent-2); font-size: 14px; }
+.input-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: end; }
+.send { display: flex; align-items: center; gap: 6px; background: #3377e8; color: #fff; border: 0; border-radius: 7px; padding: 9px 14px; font: inherit; font-size: 15px; cursor: pointer; min-height: 36px; }
+.send:disabled { opacity: .45; cursor: not-allowed; }
+.capsule :deep(.el-textarea__inner) { background: transparent; box-shadow: none; padding: 5px 2px; font-size: 15px; }
+.composer-hint { display: flex; justify-content: space-between; gap: 10px; margin: 10px 0 0; font-size: 14px; color: #657a96; }
+.context-rail { display: flex; flex-direction: column; gap: 17px; min-height: 0; overflow: auto; }
+.context-card { background: #fff; border: 1px solid var(--lab-line); border-radius: 12px; padding: 19px; }
+.context-card h2 { display: flex; align-items: center; gap: 8px; color: #4f6787; font-size: 16px; font-weight: 600; margin: 0; }
+.context-card h2 .el-icon { color: #79a0d0; font-size: 18px; }
+.context-caption { margin: 9px 0 18px; font-size: 14px; color: #657a96; }
+.context-object { display: flex; align-items: center; gap: 10px; padding: 13px 10px; border: 1px solid #e6edf6; border-radius: 7px; background: #f9fbfe; }
+.context-object-icon { color: #6e97ce; font-size: 25px; }
+.context-object strong { display: block; font-size: 15px; color: #607c9f; overflow-wrap: anywhere; }
+.context-object div > span { display: block; margin-top: 5px; font: 14px var(--lab-font-mono); color: #a2b0c3; }
+.context-facts { margin: 18px 0; }
+.context-facts > div { display: flex; justify-content: space-between; gap: 15px; margin-bottom: 14px; }
+.context-facts dt { color: #657a96; font-size: 14px; }
+.context-facts dd { margin: 0; font-size: 14px; color: #6f89ab; text-align: right; }
+.context-link { display: flex; justify-content: space-between; padding: 10px 0 0; border-top: 1px solid #eaf0f7; color: #5b8acc; font-size: 14px; text-decoration: none; }
+.context-empty { text-align: center; padding: 10px 0 4px; }
+.context-empty > .el-icon { display: flex; margin: 0 auto 13px; font-size: 30px; color: #b2c6e1; }
+.context-empty strong { display: block; font-size: 15px; font-weight: 500; color: #7c92af; }
+.context-empty p { color: #657a96; font-size: 14px; line-height: 1.9; margin-bottom: 0; }
+.evidence-guide > div { display: flex; align-items: start; gap: 9px; margin-top: 19px; }
+.guide-mark { flex: none; width: 7px; height: 7px; margin-top: 4px; border-radius: 50%; }
+.guide-mark.measurement { background: #83bdad; }
+.guide-mark.rule { background: #82a7db; }
+.guide-mark.speculation { background: #d5bc81; }
+.evidence-guide p { margin: 0; }
+.evidence-guide strong { display: block; font-size: 14px; font-weight: 500; color: #7a8fa9; }
+.evidence-guide p span { display: block; margin-top: 6px; color: #657a96; font-size: 14px; line-height: 1.6; }
+.context-footnote { display: flex; align-items: start; gap: 7px; font-size: 14px; line-height: 1.9; color: #657a96; margin: 0 4px; }
+.context-footnote .el-icon { flex: none; margin-top: 3px; }
+.scrim { position: absolute; inset: 0; border: 0; background: #11294645; z-index: 2; }
+.drawer { position: absolute; top: 0; right: 0; width: min(320px, 86vw); height: 100%; background: #fff; border-left: 1px solid var(--lab-line); transform: translateX(100%); transition: transform .2s ease; z-index: 3; display: flex; flex-direction: column; }
+.drawer.open { transform: translateX(0); }
+.drawer-head { display: flex; justify-content: space-between; align-items: center; padding: 20px 16px 14px; border-bottom: 1px solid #edf1f7; }
+.drawer-head h2 { margin: 0; font-size: 18px; }
+.session-list { list-style: none; margin: 0; padding: 12px; overflow: auto; flex: 1; }
+.session-list li { padding: 13px; border: 1px solid #e5ecf6; border-radius: 8px; cursor: pointer; margin-bottom: 8px; background: #fbfcff; }
+.session-list li.on { border-color: #a8c7f3; background: #f1f6fe; }
+.spec { display: block; color: #7d9fc9; font-size: 14px; }
+.title { display: block; margin-top: 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #637d9f; font-size: 15px; }
+.rail-empty { padding: 0 16px 16px; }
+button:focus-visible, a:focus-visible, summary:focus-visible { outline: 2px solid #3979ef; outline-offset: 3px; }
+@media (max-width: 1180px) { .assistant-workspace { grid-template-columns: minmax(0, 1fr) 225px; gap: 14px; padding-left: 20px; padding-right: 20px; } .context-card { padding: 16px; } .conversation-mode { display: none; } }
+@media (max-width: 1000px) { .assistant-workspace { grid-template-columns: minmax(0, 1fr); } .context-rail { display: none; } }
+@media (max-width: 600px) { .topbar { padding: 16px 14px 0; align-items: start; } .topbar h1 { font-size: 23px; } .topbar h1 span, .top-subtitle { display: none; } .top-actions { gap: 5px; } .ghost { font-size: 14px; padding: 7px; } .ghost .el-icon { display: none; } .assistant-workspace { padding: 14px 10px 12px; } .conversation-toolbar { padding: 9px 12px; } .thread { padding: 16px 12px; } .hero { padding-top: 15px; } .hero h2 { font-size: 23px; } .welcome-note { font-size: 14px; } .dock { padding: 0 10px 10px; } .bubble.user { max-width: 98%; } .message-avatar { width: 25px; height: 25px; font-size: 17px; } .card { padding: 12px; } .composer-hint span { display: none; } }
+@media (prefers-reduced-motion: reduce) { .copy.streaming::after { animation: none; } .drawer { transition: none; } }
 </style>

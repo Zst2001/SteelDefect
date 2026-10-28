@@ -3,10 +3,12 @@ from __future__ import annotations
 import json
 import os
 import shutil
+from datetime import datetime, timezone
 from pathlib import Path
 
 import numpy as np
 from sqlalchemy.orm import Session
+from rq import get_current_job
 
 from admit.dockerutil import DockerUnavailable, run_student_container
 from admit.sanitize import sanitize_text
@@ -14,6 +16,21 @@ from admit.scan import format_static_failure, scan_student_file
 from app.config import Settings
 from app.db.models import ModelVersion, Weight
 from app.services.import_model import model_dir, write_report
+
+
+def _container_timeout(requested: int, job_budget: int | None = None) -> int:
+    # Two availability probes (20s each) + inspect/stop/kill/rm (10s each),
+    # with a margin before RQ's outer hard timeout can kill the work horse.
+    budget = float(job_budget) if job_budget is not None else float("inf")
+    job = get_current_job()
+    if job is not None and job.started_at and job.timeout and int(job.timeout) > 0:
+        started = job.started_at
+        if started.tzinfo is None:
+            started = started.replace(tzinfo=timezone.utc)
+        budget = min(budget, int(job.timeout) - (datetime.now(timezone.utc) - started).total_seconds())
+    if budget <= 100:
+        raise DockerUnavailable("剩余作业时间不足以安全执行并清理隔离容器")
+    return max(1, int(min(requested, budget - 100)))
 
 
 def _admit_code_dir(settings: Settings) -> Path | None:
@@ -79,9 +96,10 @@ def admit_version(db: Session, version: ModelVersion, settings: Settings) -> Non
         payload = run_student_container(
             image=settings.student_image,
             mode="admit",
+            operation_id=f"admit:{version.id}",
             in_dir=in_dir,
             out_dir=out_dir,
-            timeout_sec=min(settings.admit_job_timeout_sec, 300),
+            timeout_sec=_container_timeout(300, settings.admit_job_timeout_sec),
             extra_paths=[root, settings.storage_path, settings.repo_root],
             code_dir=_admit_code_dir(settings),
         )
@@ -151,9 +169,10 @@ def infer_student_masks(
     payload = run_student_container(
         image=settings.student_image,
         mode="infer",
+        operation_id=f"infer:{task_id}:{version.id}",
         in_dir=in_dir,
         out_dir=out_dir,
-        timeout_sec=min(settings.student_infer_timeout_sec, 60 + 8 * max(len(keys), 1)),
+        timeout_sec=_container_timeout(min(settings.student_infer_timeout_sec, 60 + 8 * max(len(keys), 1))),
         extra_paths=[work, settings.storage_path],
         code_dir=_admit_code_dir(settings),
     )
@@ -196,9 +215,10 @@ def measure_student_version(db: Session, version: ModelVersion, settings: Settin
     payload = run_student_container(
         image=settings.student_image,
         mode="perf",
+        operation_id=f"perf:{version.id}",
         in_dir=in_dir,
         out_dir=out_dir,
-        timeout_sec=min(settings.perf_job_timeout_sec, 300),
+        timeout_sec=_container_timeout(300, settings.perf_job_timeout_sec),
         extra_paths=[root, work, settings.storage_path, settings.repo_root],
         code_dir=_admit_code_dir(settings),
     )

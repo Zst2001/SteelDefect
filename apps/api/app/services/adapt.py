@@ -22,9 +22,10 @@ from app.services.adapt_ast import (
     render_adapter_patch,
     source_outside_adapt_unchanged,
 )
-from app.services.import_model import enqueue_admit, model_dir, write_report
+from app.services.import_model import enqueue_admit, finish_admit_dispatch, model_dir, write_report
 from app.services.llm_client import draft_adapt_copy
 from app.services.storage import sha256_file
+from app.services.submission import lock_user
 from app.util_time import new_id, utcnow
 
 KIND_LABELS = {
@@ -226,6 +227,11 @@ def apply_adapt(
     settings: Settings | None = None,
 ) -> dict:
     settings = settings or get_settings()
+    lock_user(db, user)
+    version = db.query(ModelVersion).filter_by(id=version.id).populate_existing().with_for_update().one()
+    _owned_student_version(user, version, model)
+    if consent and version.status == "checking":
+        return {"applied": False, "declined": False, "status": version.status, "message": "复检已提交，请勿重复适配"}
     proposal = build_proposal(db, user, version, model, settings=settings, use_llm=False)
     if not consent:
         _write_audit(
@@ -268,8 +274,8 @@ def apply_adapt(
     version.source_sha256 = sha256_file(path)
     version.entry_symbol = LAB_BUILD_NAME
     version.status = "checking"
-    version.fail_stage = None
-    version.fail_message = None
+    version.fail_stage = "queue"
+    version.fail_message = "QUEUE_PENDING: 源码已适配，复检尚未确认入队"
     write_report(
         settings,
         version.id,
@@ -304,7 +310,7 @@ def apply_adapt(
     )
     db.commit()
     invalidate_after_write(None, user.id)
-    enqueue_admit(version.id, settings)
+    finish_admit_dispatch(db, version, settings, enqueue_admit(version.id, settings))
     proposal["applied"] = True
     proposal["declined"] = False
     proposal["status"] = version.status

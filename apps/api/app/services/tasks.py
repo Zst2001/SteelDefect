@@ -13,7 +13,6 @@ from infer.spec import (
     OFFICIAL_SPLIT_SCOPE,
 )
 from infer.task_io import metrics_response
-from rq import Queue
 from sqlalchemy.orm import Session, selectinload
 
 from app.cache import invalidate_after_write, rq_connection
@@ -21,6 +20,7 @@ from app.config import Settings, get_settings
 from app.db.models import (
     Dataset,
     DatasetVersion,
+    Model,
     ModelVersion,
     PreprocessSpecRow,
     Sample,
@@ -30,17 +30,30 @@ from app.db.models import (
     User,
 )
 from app.errors import AppError
+from app.services.task_artifacts import GT_NOTICE, TaskArtifacts
+from app.services.models import assert_model_role_access
+from app.services.dispatch import enqueue, apply_task_delivery
+from app.services.input_freeze import lock_version, freeze_inputs, current_samples
+from app.services.submission import request_id, lock_user, existing_task
 from app.util_time import new_id, utcnow
 
 TASK_TYPE_LABELS = {
     "compare": "快速对比",
     "eval": "正式评测",
     "demo": "公开演示",
+    "classification": "钢铁缺陷分类",
 }
 
 
 def _can_view_task(task: Task, user: User) -> bool:
-    return task.creator_id == user.id or user.role == "advisor"
+    if task.creator_id == user.id:
+        return True
+    if user.role != "advisor":
+        return False
+    # Logged-in demo access keeps its existing creator/advisor policy.
+    if task.type == "demo":
+        return True
+    return task.type in {"compare", "eval", "classification"} and task.submitted_to_advisor_at is not None
 
 
 def get_visible_task(db: Session, task_id: str, user: User) -> Task:
@@ -81,6 +94,8 @@ def _resolve_runnable_models(
     version: DatasetVersion,
     max_baselines: int = COMPARE_BASELINE_LIMIT,
 ) -> tuple[list[ModelVersion], ModelVersion | None]:
+    if version.kind == "classification_batch":
+        raise AppError("分类批次不能进入分割任务", code="TASK_KIND_MISMATCH", stage="protocol", status_code=400)
     _assert_baseline_count(baseline_version_ids, max_baselines=max_baselines)
 
     baselines = []
@@ -88,6 +103,10 @@ def _resolve_runnable_models(
         mv = db.get(ModelVersion, vid)
         if mv is None:
             raise AppError("baseline 不存在", code="MODEL_NOT_FOUND", stage="protocol", status_code=404)
+        assert_model_role_access(user, db.get(Model, mv.model_id), mv, "baseline")
+        from app.services.models import is_classification_version
+        if is_classification_version(db, mv):
+            raise AppError("分类模型不能进入分割任务", code="TASK_KIND_MISMATCH", stage="protocol", status_code=400)
         if mv.status != "runnable":
             raise AppError(
                 f"模型当前不能加入任务（状态 {mv.status}）",
@@ -109,14 +128,7 @@ def _resolve_runnable_models(
         student = db.get(ModelVersion, student_version_id)
         if student is None or student.status != "runnable":
             raise AppError("学生模型尚未通过检查，不能加入任务", code="STUDENT_NOT_RUNNABLE", stage="protocol", status_code=400)
-        from app.db.models import Model as ModelRow
-        from app.services.models import can_view_version
-
-        student_model = db.get(ModelRow, student.model_id)
-        if student_model is None or student_model.source != "student":
-            raise AppError("请选择学生导入模型", code="NOT_STUDENT_MODEL", stage="protocol", status_code=400)
-        if not can_view_version(user, student_model, student):
-            raise AppError("无权使用该学生模型", code="FORBIDDEN", stage="auth", status_code=403)
+        assert_model_role_access(user, db.get(Model, student.model_id), student, "student_under_test")
         if student.requires_cuda:
             raise AppError(
                 "当前环境为 CPU，CUDA-only 模型不可运行",
@@ -145,14 +157,7 @@ def _resolve_runnable_models(
 
 
 def _enqueue_task(settings: Settings, job_name: str, task_id: str, timeout: int) -> None:
-    queue = Queue(settings.rq_queue_name, connection=rq_connection())
-    queue.enqueue(
-        job_name,
-        task_id,
-        job_timeout=timeout,
-        result_ttl=86400,
-        failure_ttl=86400,
-    )
+    return enqueue(settings, job_name, task_id, timeout, job_id=f"task-{task_id}")
 
 
 def _attach_models_and_samples(
@@ -196,9 +201,11 @@ def create_compare_task(
     baseline_version_ids: list[str],
     student_version_id: str | None,
     settings: Settings | None = None,
+    idempotency_key: str | None = None,
 ) -> Task:
     settings = settings or get_settings()
-    version = db.get(DatasetVersion, batch_id)
+    lock_user(db, user)
+    version = lock_version(db, batch_id)
     if version is None:
         raise AppError("上传批次不存在", code="BATCH_NOT_FOUND", stage="file", status_code=404)
     dataset = db.get(Dataset, version.dataset_id)
@@ -214,7 +221,12 @@ def create_compare_task(
             status_code=400,
         )
 
-    samples = db.query(Sample).filter(Sample.version_id == version.id).order_by(Sample.sample_key.asc()).all()
+    task_id = request_id("compare", user.id, idempotency_key)
+    previous = existing_task(db, task_id, "compare", version.id, baseline_version_ids, student_version_id)
+    if previous is not None:
+        return previous
+
+    samples = current_samples(db, version.id)
     if not samples:
         raise AppError("该批次没有图片", code="NO_SAMPLES", stage="file", status_code=400)
     if len(samples) > settings.max_upload_images and version.kind == "upload_batch":
@@ -232,22 +244,30 @@ def create_compare_task(
         version=version,
     )
     task = Task(
-        id=new_id(),
+        id=task_id,
         type="compare",
         creator_id=user.id,
         dataset_version_id=version.id,
         preprocess_id=baselines[0].preprocess_id,
         status="queued",
         has_gt=has_gt,
-        error_summary=None,
+        error_summary="QUEUE_PENDING: 已保存，尚未确认入队",
         updated_at=utcnow(),
     )
-    db.add(task)
-    db.flush()
-    _attach_models_and_samples(db, task, baselines, student, samples)
-    db.commit()
+    try:
+        db.add(task)
+        db.flush()
+        _attach_models_and_samples(db, task, baselines, student, samples)
+        freeze_inputs(db, task, samples, settings)
+        db.commit()
+    except Exception:
+        # Callers such as the assistant may catch AppError and commit their own
+        # turn. Never leave a partially created task in that transaction.
+        db.rollback()
+        raise
     invalidate_after_write(task.id, user.id)
-    _enqueue_task(settings, "apps.worker.jobs.run_compare", task.id, settings.compare_job_timeout_sec)
+    delivery = _enqueue_task(settings, "apps.worker.jobs.run_compare", task.id, settings.compare_job_timeout_sec)
+    apply_task_delivery(db, task, delivery)
     return task
 
 
@@ -276,9 +296,11 @@ def create_eval_task(
     baseline_version_ids: list[str],
     student_version_id: str | None,
     settings: Settings | None = None,
+    idempotency_key: str | None = None,
 ) -> Task:
     settings = settings or get_settings()
-    version = db.get(DatasetVersion, dataset_version_id)
+    lock_user(db, user)
+    version = lock_version(db, dataset_version_id)
     if version is None:
         raise AppError("数据版本不存在", code="BATCH_NOT_FOUND", stage="file", status_code=404)
     dataset = db.get(Dataset, version.dataset_id)
@@ -288,7 +310,12 @@ def create_eval_task(
         raise AppError("无权使用该数据版本", code="FORBIDDEN", stage="auth", status_code=403)
     assert_eval_version(version)
 
-    samples = db.query(Sample).filter(Sample.version_id == version.id).order_by(Sample.sample_key.asc()).all()
+    task_id = request_id("eval", user.id, idempotency_key)
+    previous = existing_task(db, task_id, "eval", version.id, baseline_version_ids, student_version_id)
+    if previous is not None:
+        return previous
+
+    samples = current_samples(db, version.id)
     assert_eval_samples(samples)
 
     baselines, student = _resolve_runnable_models(
@@ -300,26 +327,39 @@ def create_eval_task(
         max_baselines=EVAL_BASELINE_LIMIT,
     )
     task = Task(
-        id=new_id(),
+        id=task_id,
         type="eval",
         creator_id=user.id,
         dataset_version_id=version.id,
         preprocess_id=baselines[0].preprocess_id,
         status="queued",
         has_gt=True,
-        error_summary=None,
+        error_summary="QUEUE_PENDING: 已保存，尚未确认入队",
         updated_at=utcnow(),
     )
-    db.add(task)
-    db.flush()
-    _attach_models_and_samples(db, task, baselines, student, samples)
-    db.commit()
+    try:
+        db.add(task)
+        db.flush()
+        _attach_models_and_samples(db, task, baselines, student, samples)
+        freeze_inputs(db, task, samples, settings)
+        db.commit()
+    except Exception:
+        # Callers such as the assistant may catch AppError and commit their own
+        # turn. Never leave a partially created task in that transaction.
+        db.rollback()
+        raise
     invalidate_after_write(task.id, user.id)
-    _enqueue_task(settings, "apps.worker.jobs.run_eval", task.id, settings.eval_job_timeout_sec)
+    delivery = _enqueue_task(settings, "apps.worker.jobs.run_eval", task.id, settings.eval_job_timeout_sec)
+    apply_task_delivery(db, task, delivery)
     return task
 
 
 def serialize_task(db: Session, task: Task) -> dict:
+    if task.type == "classification":
+        from app.services.classification import serialize_classification_task
+        return serialize_classification_task(db, task)
+    policy = TaskArtifacts(db, task, get_settings())
+    bundle_state = policy.bundle_state()
     preprocess = db.get(PreprocessSpecRow, task.preprocess_id)
     model_rows = (
         db.query(TaskModel, ModelVersion)
@@ -361,10 +401,10 @@ def serialize_task(db: Session, task: Task) -> dict:
             "kind": a.kind,
             "url": f"/api/tasks/{task.id}/file/{a.rel_path}",
         }
-        for a in task.artifacts
+        for a in policy.downloadable(bundle_ready=bundle_state["bundle_ready"])
     ]
     preview_keys = sorted(
-        {a["sample_key"] for a in artifacts if a["kind"] == "montage" and a["sample_key"]}
+        {a["sample_key"] for a in artifacts if a["kind"] == "origin" and a["sample_key"]}
     )
     version = db.get(DatasetVersion, task.dataset_version_id)
     dataset = db.get(Dataset, version.dataset_id) if version else None
@@ -398,11 +438,15 @@ def serialize_task(db: Session, task: Task) -> dict:
         "legend": NEU_LEGEND,
         "error_legend": ERROR_LEGEND if task.has_gt else [],
         "cam_disclaimer": CAM_DISCLAIMER,
-        "bundle_ready": task.status in {"success", "partial_success"},
+        **bundle_state,
+        "artifact_notice": GT_NOTICE if policy.gt_sensitive and not policy.allow_gt else None,
     }
 
 
 def serialize_metrics(task: Task) -> dict:
+    if task.type == "classification":
+        from app.services.classification import serialize_classification_metrics
+        return serialize_classification_metrics(task)
     if task.type == "demo":
         raise AppError("公开演示不提供精度", code="DEMO_NO_METRICS", stage="protocol", status_code=404)
     if not task.has_gt:

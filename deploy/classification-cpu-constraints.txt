@@ -1,0 +1,7 @@
+# Verified with the six administrator-supplied NEU-CLS exports on this CPU host.
+# Constraints only: do not alter the untrusted student Docker image.
+# Install from an approved CPU wheel source, then re-run the asset validator
+# on the actual host. A different runtime invalidates validated.json receipts.
+torch==2.14.0+cpu
+torchvision==0.29.0+cpu
+Pillow==12.3.0

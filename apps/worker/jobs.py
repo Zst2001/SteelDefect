@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import platform
-import zipfile
 from pathlib import Path
 
 import cv2
@@ -21,11 +20,17 @@ from app.db.models import (
     Task,
     TaskModel,
     TaskSample,
+    User,
     Weight,
 )
 from app.db.session import SessionLocal
+from app.errors import AppError
 from app.services.demo import assert_demo_worker_contract
+from app.services.models import assert_model_role_access
+from app.services.input_freeze import verify_inputs, lock_version
+from rq import get_current_job
 from app.services.storage import resolve_uri
+from app.services.task_artifacts import write_bundle
 from app.util_time import new_id, utcnow
 from infer.dataset_images import preprocess_rgb, read_rgb
 from infer.engine import count_parameters, get_builtin_module, predict_mask
@@ -54,9 +59,6 @@ from infer.task_io import prepare_task_dirs, select_preview_keys, write_json, wr
 from infer.viz import align_mask, boundary_bgr, colorize_bgr, error_map_bgr, overlay_rgb, save_bgr_png, save_rgb_png
 
 from apps.worker.student_exec import admit_version, infer_student_masks, measure_student_version
-
-BUNDLE_FOLDERS = ("origin", "gt", "pred", "overlay", "boundary", "error", "cam", "montage")
-
 
 def _classify_fail(exc: BaseException) -> str:
     text = str(exc).lower()
@@ -132,25 +134,6 @@ def _try_write_cam(
     return overlays
 
 
-def _write_bundle(task_dir: Path) -> None:
-    bundle = task_dir / "bundle.zip"
-    with zipfile.ZipFile(bundle, "w", compression=zipfile.ZIP_DEFLATED) as zf:
-        for folder in BUNDLE_FOLDERS:
-            root = task_dir / folder
-            if not root.exists():
-                continue
-            for file_path in root.rglob("*"):
-                if not file_path.is_file():
-                    continue
-                if file_path.suffix.lower() == ".pdf" or file_path.name.lower() == "metrics.json":
-                    continue
-                zf.write(file_path, file_path.relative_to(task_dir).as_posix())
-        task_json = task_dir / "task.json"
-        if task_json.is_file():
-            zf.write(task_json, "task.json")
-        # metrics.json stays out of the Draw.io bundle; it is not a layer.
-
-
 def _upsert_metric_set(db: Session, task: Task, payload: dict, n: int, scope: str) -> None:
     existing = db.query(MetricSet).filter(MetricSet.task_id == task.id).one_or_none()
     if existing is None:
@@ -201,31 +184,106 @@ def run_demo(task_id: str) -> None:
     _run_task(task_id, expected_types=("demo",))
 
 
+def run_classification(task_id: str) -> None:
+    _run_task(task_id, expected_types=("classification",))
+
+
+def _assert_lab_execution_authorized(db: Session, task: Task) -> None:
+    """Validate the whole task before ANY executor runs, using current DB grants."""
+    # Lock current grants until queued -> running commits. A concurrent revocation
+    # is ordered either before this check or after the task has started.
+    user = (
+        db.query(User).filter(User.id == task.creator_id).populate_existing().with_for_update().one_or_none()
+        if task.creator_id else None
+    )
+    if user is None or user.status != "active":
+        raise AppError("任务创建者当前不可运行任务", code="TASK_ACTOR_UNAVAILABLE", stage="auth")
+    if task.type == "classification":
+        # Classification's caller immediately checks its complete contract using
+        # the same protocol -> model -> version lock order as builtin registration.
+        return
+    links = (
+        db.query(TaskModel).filter(TaskModel.task_id == task.id)
+        .order_by(TaskModel.model_version_id.asc()).populate_existing().with_for_update().all()
+    )
+    if not links:
+        raise AppError("任务没有模型", code="NO_MODELS", stage="protocol")
+    for link in links:
+        version = (
+            db.query(ModelVersion).filter(ModelVersion.id == link.model_version_id)
+            .populate_existing().with_for_update().one_or_none()
+        )
+        if version is None:
+            raise AppError("任务模型版本不存在", code="MODEL_NOT_FOUND", stage="protocol")
+        model = (
+            db.query(Model).filter(Model.id == version.model_id)
+            .populate_existing().with_for_update().one_or_none()
+        )
+        assert_model_role_access(user, model, version, link.role)
+        from app.services.models import is_classification_version
+        if task.type != "classification" and is_classification_version(db, version):
+            raise AppError("分类模型不能进入分割执行器", code="TASK_KIND_MISMATCH", stage="protocol")
+        if version.status != "runnable":
+            raise AppError("任务模型当前不可运行", code="MODEL_NOT_RUNNABLE", stage="protocol")
+        if version.requires_cuda:
+            raise AppError("当前 CPU 环境不可运行该模型", code="CUDA_REQUIRED", stage="resource")
+
+
 def _run_task(task_id: str, expected_types: tuple[str, ...]) -> None:
     settings = get_settings()
     db = SessionLocal()
+    owns_attempt = False
+    started = False
     try:
-        task = db.query(Task).filter(Task.id == task_id).with_for_update().one_or_none()
+        # Same parent order as API/rerun: actor -> dataset version -> task.
+        # Serialize sample locks with submissions before locking any model grants.
+        candidate = db.query(Task.creator_id, Task.dataset_version_id).filter(Task.id == task_id).first()
+        if candidate is None:
+            return
+        if candidate.creator_id:
+            db.query(User).filter_by(id=candidate.creator_id).with_for_update().one_or_none()
+        lock_version(db, candidate.dataset_version_id)
+        task = db.query(Task).filter(Task.id == task_id).populate_existing().with_for_update().one_or_none()
         if task is None:
             return
         if task.type not in expected_types:
             raise RuntimeError(f"job type mismatch: job={expected_types} task={task.type}")
-        if task.status in {"success", "failed", "partial_success"}:
+        if task.status != "queued":
             return
+        owns_attempt = True
+        if task.type in {"compare", "eval", "classification"}:
+            _assert_lab_execution_authorized(db, task)
+        if task.type == "classification":
+            from apps.worker.classification import assert_classification_execution
+            assert_classification_execution(db, task, settings)
+        verify_inputs(db, task, settings)
+        task.error_summary = None
         task.status = "running"
         task.updated_at = utcnow()
         db.commit()
+        started = True
         invalidate_after_write(task.id, task.creator_id)
         if task.type == "demo":
             _run_demo_body(db, task, settings)
+        elif task.type == "classification":
+            from apps.worker.classification import run_classification_body
+            run_classification_body(db, task, settings)
         else:
             _run_compare_body(db, task, settings)
     except Exception as exc:
         db.rollback()
-        task = db.get(Task, task_id)
-        if task is not None:
+        # A failed lookup/lock is not ownership. After rollback another worker
+        # may have claimed the queued task, so recheck under a current row lock.
+        task = (db.query(Task).filter_by(id=task_id).populate_existing().with_for_update().one_or_none()
+                if owns_attempt else None)
+        if task is not None and task.status == ("running" if started else "queued"):
             task.status = "failed"
-            task.error_summary = str(exc)
+            task.error_summary = f"{exc.code}: {exc.message}" if isinstance(exc, AppError) else str(exc)
+            if isinstance(exc, AppError):
+                for link in db.query(TaskModel).filter(TaskModel.task_id == task.id).all():
+                    link.status = "failed"
+                    link.fail_stage = exc.stage
+                    link.fail_message = task.error_summary
             task.updated_at = utcnow()
             db.commit()
             invalidate_after_write(task.id, task.creator_id)
@@ -235,8 +293,8 @@ def _run_task(task_id: str, expected_types: tuple[str, ...]) -> None:
 
 
 def _run_compare_body(db: Session, task: Task, settings) -> None:
-    if task.type == "demo":
-        raise RuntimeError("compare worker refused demo task")
+    if task.type not in {"compare", "eval"}:
+        raise RuntimeError("compare worker refused non-segmentation task")
     _run_inference_visuals(db, task, settings, mode="lab")
 
 
@@ -339,7 +397,7 @@ def _run_inference_visuals(db: Session, task: Task, settings, *, mode: str) -> N
                     raise RuntimeError("demo forbids student models")
                 raw_preds = infer_student_masks(db, mv, settings, task_id=task.id, tensors=tensors)
                 pred_by_sample = raw_preds
-            else:
+            elif model_row and model_row.source == "builtin":
                 if mv.slug not in BUILTIN_SLUGS:
                     raise RuntimeError(f"unsupported slug {mv.slug}")
                 weight = db.query(Weight).filter(Weight.version_id == mv.id).first()
@@ -352,6 +410,8 @@ def _run_inference_visuals(db: Session, task: Task, settings, *, mode: str) -> N
                     for sample in samples
                 }
                 live_module = module
+            else:
+                raise RuntimeError("模型来源无效，拒绝执行")
             pred_masks[mv.id] = {}
             if score_gt:
                 confmats[mv.id] = empty_confmat(spec.num_classes)
@@ -519,7 +579,9 @@ def _run_inference_visuals(db: Session, task: Task, settings, *, mode: str) -> N
     except Exception:
         env["torch"] = "unavailable"
 
+    input_manifest = verify_inputs(db, task, settings)
     task_payload = {
+        "inputs": input_manifest,
         "task_id": task.id,
         "type": task.type,
         "has_gt": False if demo_mode else bool(task.has_gt),
@@ -537,7 +599,7 @@ def _run_inference_visuals(db: Session, task: Task, settings, *, mode: str) -> N
     task_payload["cam_disclaimer"] = CAM_DISCLAIMER
     write_task_json(task_dir, task_payload)
     _add_artifact(db, task.id, "task.json", "log", None, None)
-    _write_bundle(task_dir)
+    write_bundle(db, task, settings)
     _add_artifact(db, task.id, "bundle.zip", "bundle", None, None)
 
     failed = [tm for tm in task_models if tm.status != "success"]
@@ -559,22 +621,34 @@ def _run_inference_visuals(db: Session, task: Task, settings, *, mode: str) -> N
 def run_admit(version_id: str) -> None:
     settings = get_settings()
     db = SessionLocal()
+    started = False
+    source_hash = None
     try:
-        version = db.get(ModelVersion, version_id)
+        version = db.query(ModelVersion).filter_by(id=version_id).populate_existing().with_for_update().one_or_none()
         if version is None:
             return
-        if version.status not in {"uploaded", "checking"}:
+        current = get_current_job()
+        expected_job = f"admit-{version.id}-{(version.source_sha256 or chr(45))[:16]}"
+        if current is not None and current.id != expected_job:
             return
+        if version.fail_stage == "admit_running" or version.status not in {"uploaded", "checking"}:
+            return
+        source_hash = version.source_sha256
         version.status = "checking"
+        version.fail_stage = "admit_running"
+        version.fail_message = "隔离检查执行中"
         db.commit()
+        started = True
         model = db.get(Model, version.model_id)
         admit_version(db, version, settings)
         db.commit()
         invalidate_after_write(None, model.owner_id if model else None)
     except Exception as exc:
         db.rollback()
-        version = db.get(ModelVersion, version_id)
-        if version is not None:
+        version = (db.query(ModelVersion).filter_by(id=version_id).populate_existing().with_for_update().one_or_none()
+                   if started else None)
+        if (version is not None and version.status == "checking" and version.fail_stage == "admit_running"
+                and version.source_sha256 == source_hash):
             version.status = "cannot_start"
             version.fail_stage = "resource"
             version.fail_message = str(exc)
@@ -589,19 +663,27 @@ def run_admit(version_id: str) -> None:
 def run_perf(version_id: str) -> None:
     settings = get_settings()
     db = SessionLocal()
+    started = False
+    claimed_job_id = None
     try:
         from app.services.perf import apply_measure_result, get_or_create_profile, mark_measure_failed
         from infer.perf import measure_builtin
 
-        version = db.get(ModelVersion, version_id)
+        version = db.query(ModelVersion).filter_by(id=version_id).populate_existing().with_for_update().one_or_none()
         if version is None:
             return
         model = db.get(Model, version.model_id)
         if model is None:
             return
         profile = get_or_create_profile(db, version)
+        current = get_current_job()
+        if profile.status != "queued" or (current is not None and current.id != profile.job_id):
+            return
+        claimed_job_id = profile.job_id
         profile.status = "measuring"
+        profile.fail_message = None
         db.commit()
+        started = True
         invalidate_models_lists()
         if version.status != "runnable" or version.requires_cuda:
             mark_measure_failed(db, version, model, "只有当前环境可运行的版本才能测量。")
@@ -630,15 +712,19 @@ def run_perf(version_id: str) -> None:
         invalidate_after_write(None, model.owner_id)
     except Exception as exc:
         db.rollback()
-        version = db.get(ModelVersion, version_id)
-        model = db.get(Model, version.model_id) if version is not None else None
-        if version is not None and model is not None:
-            from app.services.perf import mark_measure_failed
+        if started:
+            from app.services.perf import _load_profile, mark_measure_failed
 
-            mark_measure_failed(db, version, model, str(exc))
-            db.commit()
-            invalidate_models_lists()
-            invalidate_after_write(None, model.owner_id)
+            # Same version -> profile order as submission; never fail a newer job.
+            version = db.query(ModelVersion).filter_by(id=version_id).populate_existing().with_for_update().one_or_none()
+            profile = _load_profile(db, version_id) if version is not None else None
+            if profile is not None and profile.status == "measuring" and profile.job_id == claimed_job_id:
+                model = db.get(Model, version.model_id)
+                if model is not None:
+                    mark_measure_failed(db, version, model, str(exc))
+                    db.commit()
+                    invalidate_models_lists()
+                    invalidate_after_write(None, model.owner_id)
         raise
     finally:
         db.close()

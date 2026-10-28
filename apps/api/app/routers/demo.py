@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Header
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
@@ -18,7 +18,8 @@ from app.services.demo import (
 )
 from app.services.demo_identity import DemoIdentity, get_demo_identity
 from app.services.demo_quota import assert_demo_submit_rate
-from app.services.storage import resolve_uri, safe_rel_path
+from app.services.storage import resolve_uri
+from app.services.task_artifacts import TaskArtifacts
 
 router = APIRouter(prefix="/demo", tags=["demo"])
 
@@ -60,6 +61,7 @@ def demo_models(
 @router.post("/tasks")
 def create_demo(
     body: DemoTaskIn,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
     db: Session = Depends(get_db),
     identity: DemoIdentity = Depends(get_demo_identity),
 ) -> dict:
@@ -68,6 +70,7 @@ def create_demo(
         db,
         identity,
         sample_keys=body.sample_keys,
+        idempotency_key=idempotency_key,
         baseline_version_ids=body.baseline_version_ids,
     )
     return serialize_demo_task(db, get_visible_demo_task(db, task.id, identity))
@@ -90,13 +93,7 @@ def get_demo_file(
     identity: DemoIdentity = Depends(get_demo_identity),
 ):
     task = get_visible_demo_task(db, task_id, identity)
-    cleaned = safe_rel_path(rel_path)
-    root = (get_settings().storage_path / "tasks" / task.id).resolve()
-    path = (root / cleaned).resolve()
-    if root not in path.parents and path != root:
-        raise AppError("非法路径", code="BAD_PATH", stage="file", status_code=400)
-    if not path.is_file():
-        raise AppError("文件不存在", code="NOT_FOUND", stage="file", status_code=404)
+    path = TaskArtifacts(db, task, get_settings()).file(rel_path)
     return FileResponse(path)
 
 
@@ -107,9 +104,7 @@ def get_demo_bundle(
     identity: DemoIdentity = Depends(get_demo_identity),
 ):
     task = get_visible_demo_task(db, task_id, identity)
-    path = get_settings().storage_path / "tasks" / task.id / "bundle.zip"
-    if not path.is_file():
-        raise AppError("打包文件尚未生成", code="BUNDLE_MISSING", stage="file", status_code=404)
+    path = TaskArtifacts(db, task, get_settings()).file("bundle.zip")
     return FileResponse(
         path,
         filename=f"{task.id}_demo.zip",

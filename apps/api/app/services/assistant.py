@@ -33,12 +33,13 @@ from app.services.llm_client import (
     iter_chat_completion,
     kb_messages,
 )
-from app.services.models import can_view_version
+from app.services.models import assert_model_content_access, can_view_version
 from app.services.perf import request_measure, serialize_perf
 from app.services.records import serialize_record
 from app.services.tasks import (
     DEMO_CATALOG_KIND,
     TASK_TYPE_LABELS,
+    _resolve_runnable_models,
     create_compare_task,
     serialize_metrics,
     serialize_task,
@@ -538,6 +539,9 @@ def _visible_version(db: Session, version_id: str, user: User) -> ModelVersion:
             )
     if version is None or not can_view_version(user, version.model, version):
         raise AppError("模型不存在", code="NOT_FOUND", stage="auth", status_code=404)
+    from app.services.models import is_classification_version
+    if is_classification_version(db, version):
+        raise AppError("科研助手尚未开放分类模型工具，请使用钢铁缺陷分类页", code="UNAVAILABLE", stage="protocol", status_code=400)
     return version
 
 
@@ -571,17 +575,17 @@ def preview_infer_run(
         raise AppError("该批次没有图片", code="NO_SAMPLES", stage="file", status_code=400)
     for vid in list(baseline_version_ids) + ([student_version_id] if student_version_id else []):
         _reject_catalog_id(db, vid)
-    baselines = []
-    for vid in baseline_version_ids:
-        mv = _visible_version(db, vid, user)
-        if mv.model.source != "builtin":
-            raise AppError("请选择内置 baseline", code="NOT_BASELINE", stage="protocol", status_code=400)
-        baselines.append({"id": mv.id, "name": mv.model.name, "slug": mv.slug, "status": mv.status})
+    resolved_baselines, resolved_student = _resolve_runnable_models(
+        db, user, baseline_version_ids=baseline_version_ids,
+        student_version_id=student_version_id, version=version,
+    )
+    baselines = [
+        {"id": mv.id, "name": mv.model.name, "slug": mv.slug, "status": mv.status}
+        for mv in resolved_baselines
+    ]
     student = None
-    if student_version_id:
-        sv = _visible_version(db, student_version_id, user)
-        if sv.model.source != "student":
-            raise AppError("请选择学生导入模型", code="NOT_STUDENT_MODEL", stage="protocol", status_code=400)
+    if resolved_student is not None:
+        sv = resolved_student
         student = {"id": sv.id, "name": sv.model.name, "status": sv.status}
     has_gt = bool(samples) and all(s.mask_uri for s in samples)
     return {
@@ -809,6 +813,7 @@ def add_code_turn(
     _require_tool(session, "code.advise")
     version = _visible_version(db, version_id, user)
     model = version.model
+    assert_model_content_access(user, model, version)
     source_text = (snippet or "").strip() or None
     if not source_text and model.source == "student":
         source_text = _read_student_source(version)
@@ -1333,6 +1338,7 @@ def _iter_code_turn(
     _require_tool(session, "code.advise")
     version = _visible_version(db, version_id, user)
     model = version.model
+    assert_model_content_access(user, model, version)
     source_text = (snippet or "").strip() or None
     if not source_text and model.source == "student":
         source_text = _read_student_source(version)

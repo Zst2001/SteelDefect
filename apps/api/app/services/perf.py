@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from rq import Queue
+from app.services.dispatch import enqueue, Delivery
+from app.services.submission import request_id
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -32,10 +33,12 @@ def _weight_bytes(settings: Settings, weight: Weight | None) -> int | None:
 
 
 def _load_profile(db: Session, version_id: str) -> ModelPerfProfile | None:
-    return db.query(ModelPerfProfile).filter(ModelPerfProfile.version_id == version_id).one_or_none()
+    return db.query(ModelPerfProfile).filter(ModelPerfProfile.version_id == version_id).populate_existing().with_for_update().one_or_none()
 
 
 def get_or_create_profile(db: Session, version: ModelVersion) -> ModelPerfProfile:
+    # Serialize absence as well as updates. All writers lock version before profile.
+    version = db.query(ModelVersion).filter_by(id=version.id).populate_existing().with_for_update().one()
     profile = _load_profile(db, version.id)
     if profile is not None:
         return profile
@@ -82,7 +85,21 @@ def serialize_perf(
     elif weight and weight.param_count is not None:
         param_count = int(weight.param_count)
     flops = int(profile.flops) if profile and profile.flops is not None else None
-    latency = profile.latency_ms_per_image if profile else None
+    # A remeasurement keeps the last stored values for diagnosis, but queued,
+    # failed or incompatible profiles must not publish them as current CPU speed.
+    latency = None
+    if (
+        profile is not None
+        and profile.status == "success"
+        and profile.device == "cpu"
+        and profile.batch == 1
+        and profile.input_kind == "dummy"
+        and (profile.input_h, profile.input_w) == (version.input_h, version.input_w)
+    ):
+        latency = profile.latency_ms_per_image
+    fps = fps_from_latency_ms(latency)
+    if fps is None:
+        latency = None
     batch = profile.batch if profile else 1
     status = profile.status if profile else "unmeasured"
     runnable = can_measure(version)
@@ -92,7 +109,7 @@ def serialize_perf(
         "param_count": param_count,
         "weight_bytes": weight_bytes,
         "latency_ms_per_image": latency,
-        "fps_per_image": fps_from_latency_ms(latency, batch=batch),
+        "fps_per_image": fps,
         "flops": flops,
         "warmup_runs": profile.warmup_runs if profile else 3,
         "timed_runs": profile.timed_runs if profile else 10,
@@ -109,7 +126,11 @@ def serialize_perf(
     }
 
 
-def request_measure(db: Session, version: ModelVersion, model: Model) -> ModelPerfProfile:
+def request_measure(db: Session, version: ModelVersion, model: Model, *, idempotency_key: str | None = None) -> ModelPerfProfile:
+    version = db.query(ModelVersion).filter_by(id=version.id).populate_existing().with_for_update().one()
+    from app.services.models import is_classification_version
+    if is_classification_version(db, version):
+        raise AppError("分类模型不使用分割测参执行器", code="TASK_KIND_MISMATCH", stage="protocol", status_code=400)
     if version.requires_cuda:
         raise AppError(
             "当前环境为 CPU，该模型标明需要 CUDA，不可测量。不会静默改用随机权重。",
@@ -125,39 +146,36 @@ def request_measure(db: Session, version: ModelVersion, model: Model) -> ModelPe
             status_code=400,
         )
     profile = get_or_create_profile(db, version)
-    if profile.status in {"queued", "measuring"}:
+    requested_job_id = "perf-" + request_id("perf", version.id, idempotency_key)
+    if profile.status in {"queued", "measuring"} or (idempotency_key is not None and profile.job_id == requested_job_id):
         return profile
     settings = get_settings()
     profile.status = "queued"
-    profile.fail_message = None
+    profile.fail_message = "QUEUE_PENDING: 测参尚未确认入队"
     profile.updated_at = utcnow()
+    profile.job_id = requested_job_id
+    job_id = profile.job_id
     db.commit()
-    try:
-        job_id = enqueue_perf(version.id, settings)
-    except Exception:
-        profile.status = "failed"
-        profile.fail_message = "测量任务入队失败"
-        profile.updated_at = utcnow()
-        db.commit()
-        raise
-    profile.job_id = job_id
+    delivery = enqueue_perf(version.id, settings, job_id=job_id)
+    profile = db.query(ModelPerfProfile).filter_by(version_id=version.id).populate_existing().with_for_update().one()
+    if profile.status == "queued" and profile.job_id == job_id:
+        state = delivery.state if isinstance(delivery, Delivery) else "confirmed"
+        if state == "confirmed":
+            profile.fail_message = None
+        elif state == "rejected":
+            profile.status, profile.fail_message = "failed", "QUEUE_REJECTED: 测参未入队"
+        elif state == "unknown":
+            profile.fail_message = "QUEUE_UNKNOWN: 测参入队待核验；作业 ID=" + job_id
     db.commit()
     invalidate_models_lists()
     invalidate_after_write(None, model.owner_id)
     return profile
 
 
-def enqueue_perf(version_id: str, settings: Settings | None = None) -> str:
+def enqueue_perf(version_id: str, settings: Settings | None = None, *, job_id: str | None = None):
     settings = settings or get_settings()
-    queue = Queue(settings.rq_queue_name, connection=rq_connection())
-    job = queue.enqueue(
-        "apps.worker.jobs.run_perf",
-        version_id,
-        job_timeout=settings.perf_job_timeout_sec,
-        result_ttl=86400,
-        failure_ttl=86400,
-    )
-    return str(job.id)
+    return enqueue(settings, "apps.worker.jobs.run_perf", version_id, settings.perf_job_timeout_sec,
+                   job_id=job_id or f"perf-{new_id()}")
 
 
 def apply_measure_result(
@@ -168,6 +186,14 @@ def apply_measure_result(
     *,
     settings: Settings | None = None,
 ) -> ModelPerfProfile:
+    # Reject malformed runner output before mutating a profile or its weights.
+    # In particular, NaN/Infinity cannot be represented by API JSON responses.
+    try:
+        latency = float(payload["latency_ms_per_image"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError("Invalid performance latency: expected positive finite ms/image") from exc
+    if fps_from_latency_ms(latency) is None:
+        raise ValueError("Invalid performance latency: expected positive finite ms/image")
     settings = settings or get_settings()
     profile = get_or_create_profile(db, version)
     weight = db.query(Weight).filter(Weight.version_id == version.id).first()
@@ -181,7 +207,7 @@ def apply_measure_result(
     if weight_bytes is None:
         weight_bytes = _weight_bytes(settings, weight)
     profile.weight_bytes = int(weight_bytes) if weight_bytes is not None else None
-    profile.latency_ms_per_image = float(payload["latency_ms_per_image"])
+    profile.latency_ms_per_image = latency
     flops = payload.get("flops")
     profile.flops = int(flops) if flops is not None else None
     profile.warmup_runs = int(payload.get("warmup_runs") or 3)

@@ -55,7 +55,9 @@ def test_scenes_require_login() -> None:
         assert response.json()["code"] == "UNAUTHENTICATED"
 
 
-def test_scene_list_marks_pcb_and_solar_detection_empty() -> None:
+def test_scene_list_marks_pcb_and_solar_detection_empty(monkeypatch) -> None:
+    from app.services import scenes
+    monkeypatch.setattr(scenes, "classification_ready", lambda: False)
     client = _client(signed_in=True)
     response = client.get("/api/scenes")
     assert response.status_code == 200
@@ -79,6 +81,18 @@ def test_scene_list_marks_pcb_and_solar_detection_empty() -> None:
         assert len(tasks) == 1
         assert tasks[0]["kind"] == "detection"
         assert tasks[0]["status"] == "empty"
+
+
+def test_only_steel_classification_opens_when_assets_are_ready(monkeypatch) -> None:
+    from app.services import scenes
+    monkeypatch.setattr(scenes, "classification_ready", lambda: True)
+    by_id = {row["id"]: row for row in _client(signed_in=True).get("/api/scenes").json()["scenes"]}
+    steel = {row["kind"]: row["status"] for row in by_id["steel"]["tasks"]}
+    assert steel["classification"] == "open"
+    assert steel["detection"] == "empty"
+    for scene in ("pcb", "solar"):
+        assert len(by_id[scene]["tasks"]) == 1
+        assert by_id[scene]["tasks"][0]["status"] == "empty"
 
 
 def test_empty_detection_get_has_no_metrics() -> None:

@@ -14,6 +14,7 @@ from app.db.models import Dataset, DatasetVersion, PreprocessSpecRow, Sample, Us
 from app.deps import get_db
 from app.errors import AppError
 from app.util_time import new_id
+from app.services.input_freeze import lock_version, assert_unreferenced, current_samples
 from infer.masks import MaskError, decode_mask_bytes, encode_index_png, looks_like_label_map, validate_label_mask
 
 ALLOWED_EXT = {".png", ".jpg", ".jpeg", ".tif", ".tiff"}
@@ -133,7 +134,7 @@ async def upload_masks(
             stage="file",
             status_code=400,
         )
-    version = db.get(DatasetVersion, batch_id)
+    version = lock_version(db, batch_id)
     if version is None:
         raise AppError("上传批次不存在", code="BATCH_NOT_FOUND", stage="file", status_code=404)
     dataset = db.get(Dataset, version.dataset_id)
@@ -149,7 +150,8 @@ async def upload_masks(
             status_code=403,
         )
 
-    samples = db.query(Sample).filter(Sample.version_id == version.id).all()
+    assert_unreferenced(db, version)
+    samples = current_samples(db, version.id)
     by_key = {sample.sample_key: sample for sample in samples}
     if not by_key:
         raise AppError("该批次没有图片，请先上传原图", code="NO_SAMPLES", stage="file", status_code=400)
@@ -203,8 +205,10 @@ async def upload_masks(
 
     paired = []
     for sample, labels in decoded:
-        stored = dest_root / f"{sample.sample_key}.png"
-        stored.write_bytes(encode_index_png(labels))
+        content = encode_index_png(labels)
+        stored = dest_root / f"{new_id()}.png"
+        with stored.open("xb") as handle:
+            handle.write(content)
         sample.mask_uri = f"data:uploads/{version.id}/masks/{stored.name}"
         paired.append({"id": sample.id, "sample_key": sample.sample_key, "has_mask": True})
 

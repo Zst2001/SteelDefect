@@ -1,0 +1,16 @@
+{
+  "checks": 156,
+  "browser": "151.0.7922.34",
+  "viewportWidths": [
+    1672,
+    1440,
+    1280,
+    768,
+    390
+  ],
+  "apiRequests": 308,
+  "unexpected": [],
+  "pageErrors": [],
+  "backend": "fully mocked; no live services",
+  "output": "F:\\360MoveData\\Users\\40336\\Desktop\\Bofang\\Steel_lab\\docs\\report\\classification-2026-10-28\\main-pages"
+}

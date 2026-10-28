@@ -20,6 +20,7 @@ const router = createRouter({
         { path: "inspect/pcb", name: "pcb-inspect", component: () => import("../views/PlaceholderDisabledView.vue"), meta: { title: "PCB板缺陷检测", kind: "scene-detection" } },
         { path: "inspect/solar", name: "solar-inspect", component: () => import("../views/PlaceholderDisabledView.vue"), meta: { title: "太阳能电池板缺陷检测", kind: "scene-detection" } },
         { path: "compare/:taskId", name: "compare-task", component: () => import("../views/compare/CompareTaskView.vue") },
+        { path: "classification/:taskId", name: "classification-task", component: () => import("../views/classification/ClassifyTaskView.vue") },
         { path: "datasets", name: "datasets", component: () => import("../views/datasets/DatasetsListView.vue") },
         { path: "datasets/:id", name: "dataset-detail", component: () => import("../views/datasets/DatasetDetailView.vue") },
         { path: "models", name: "models", component: () => import("../views/models/ModelsListView.vue") },

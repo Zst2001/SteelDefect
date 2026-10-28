@@ -129,4 +129,5 @@ def test_eval_task_label_on_dashboard() -> None:
     )
     payload = _task_payload(task)
     assert payload["type_label"] == "正式评测"
-    assert payload["bundle_ready"] is True
+    assert payload["bundle_ready"] is False  # No artifact/ZIP evidence supplied.
+    assert payload["bundle_unavailable_reason"]

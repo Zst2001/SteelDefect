@@ -1,0 +1,9 @@
+{
+  "checks": 36,
+  "browser": "151.0.7922.34",
+  "mockedApiCalls": 102,
+  "blockedExternalRequests": 16,
+  "unexpected": [],
+  "errors": [],
+  "isolation": "No .env, backend, DB, Redis, Docker, LLM or inference; all business data synthetic."
+}

@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import logging
+import math
+from redis.exceptions import RedisError
+
 from sqlalchemy.orm import Session, selectinload
 
 from app.cache import invalidate_after_write
@@ -7,6 +11,7 @@ from app.config import Settings, get_settings
 from app.db.models import (
     DatasetVersion,
     Model,
+    ModelPerfProfile,
     ModelVersion,
     PreprocessSpecRow,
     Sample,
@@ -15,25 +20,41 @@ from app.db.models import (
     TaskSample,
 )
 from app.errors import AppError
+from app.services.task_artifacts import TaskArtifacts
 from app.services.demo_identity import DemoIdentity
 from app.services.demo_quota import raise_demo_quota, release_guest_quota, reserve_guest_quota
 from app.services.tasks import TASK_TYPE_LABELS, _attach_models_and_samples, _enqueue_task
 from app.util_time import new_id, utcnow
+from app.services.dispatch import apply_task_delivery
+from app.services.input_freeze import freeze_inputs
+from app.services.submission import request_id, existing_task, lock_user
 from infer.spec import CAM_DISCLAIMER, DEMO_CATALOG_KIND, DEMO_DISCLAIMER, DEMO_MODEL_SLUGS, NEU_LEGEND
+from admit.perf import fps_from_latency_ms
 
 GT_LEAK_KEYS = ("mask_uri", "mask", "has_mask", "has_gt", "origin_uri", "gt")
+logger = logging.getLogger(__name__)
+
+
+def _release_reservation(identity, task_id):
+    try:
+        release_guest_quota(identity, task_id)
+    except RedisError as exc:
+        # Financial/quota semantics are not cache bypass: retain an explicit diagnostic.
+        logger.error("demo quota compensation unconfirmed task=%s error=%s", task_id, type(exc).__name__)
 METRIC_LEAK_TOKENS = ("metrics", "miou", "mdice", "acc", "metric_set", "available")
 GT_FIELD_TOKENS = ("mask_uri", "has_mask", "has_gt", "metrics", "miou", "mdice", "acc")
 DEMO_ARTIFACT_KINDS = {"origin", "pred_color", "overlay", "boundary", "cam", "montage", "bundle", "log"}
 
 
-def get_demo_version(db: Session) -> DatasetVersion:
-    version = (
+def get_demo_version(db: Session, *, for_update: bool = False) -> DatasetVersion:
+    query = (
         db.query(DatasetVersion)
         .filter(DatasetVersion.kind == DEMO_CATALOG_KIND)
         .order_by(DatasetVersion.created_at.asc())
-        .one_or_none()
     )
+    if for_update:
+        query = query.populate_existing().with_for_update()
+    version = query.one_or_none()
     if version is None:
         raise AppError("公开演示样例尚未发布", code="DEMO_CATALOG_MISSING", stage="file", status_code=503)
     return version
@@ -89,7 +110,28 @@ def is_demo_model(model: Model, version: ModelVersion) -> bool:
     )
 
 
-def serialize_demo_model(model: Model, version: ModelVersion) -> dict:
+def serialize_demo_model(
+    model: Model, version: ModelVersion, *, profile: ModelPerfProfile | None = None
+) -> dict:
+    # Public catalog reads persisted facts only. Do not trigger measurement or
+    # serialize the private profile (environment, paths and failure details).
+    weight = version.weights[0] if version.weights else None
+    param_count = weight.param_count if weight else None
+    if profile and profile.status == "success" and profile.param_count is not None:
+        param_count = profile.param_count
+    fps = None
+    if (
+        profile is not None
+        and profile.status == "success"
+        and profile.device == "cpu"
+        and profile.batch == 1
+        and profile.input_kind == "dummy"
+        and (profile.input_h, profile.input_w) == (version.input_h, version.input_w)
+        and profile.latency_ms_per_image is not None
+        and math.isfinite(profile.latency_ms_per_image)
+        and profile.latency_ms_per_image > 0
+    ):
+        fps = fps_from_latency_ms(profile.latency_ms_per_image, batch=1)
     return {
         "id": version.id,
         "name": model.name,
@@ -99,13 +141,19 @@ def serialize_demo_model(model: Model, version: ModelVersion) -> dict:
         "input_size": [version.input_h, version.input_w],
         "requires_cuda": False,
         "runnable_here": True,
+        "param_count": int(param_count) if param_count is not None and param_count >= 0 else None,
+        "fps_per_image": fps,
     }
 
 
 def list_demo_models(db: Session) -> dict:
     rows = (
         db.query(ModelVersion)
-        .options(selectinload(ModelVersion.model))
+        .options(
+            selectinload(ModelVersion.model),
+            selectinload(ModelVersion.weights),
+            selectinload(ModelVersion.perf_profile),
+        )
         .all()
     )
     items = []
@@ -113,7 +161,7 @@ def list_demo_models(db: Session) -> dict:
         model = version.model
         if model is None or not is_demo_model(model, version):
             continue
-        items.append(serialize_demo_model(model, version))
+        items.append(serialize_demo_model(model, version, profile=version.perf_profile))
     items.sort(key=lambda row: DEMO_MODEL_SLUGS.index(row["slug"]) if row["slug"] in DEMO_MODEL_SLUGS else 99)
     return {"disclaimer": DEMO_DISCLAIMER, "items": items}
 
@@ -186,6 +234,7 @@ def _resolve_demo_samples(db: Session, version: DatasetVersion, sample_keys: lis
     rows = (
         db.query(Sample)
         .filter(Sample.version_id == version.id, Sample.sample_key.in_(keys))
+        .order_by(Sample.sample_key).populate_existing().with_for_update()
         .all()
     )
     by_key = {row.sample_key: row for row in rows}
@@ -205,13 +254,19 @@ def create_demo_task(
     sample_keys: list[str],
     baseline_version_ids: list[str],
     settings: Settings | None = None,
+    idempotency_key: str | None = None,
 ) -> Task:
     settings = settings or get_settings()
-    version = get_demo_version(db)
+    if identity.user is not None:
+        lock_user(db, identity.user)
+    version = get_demo_version(db, for_update=True)
+    task_id = request_id("demo", identity.user.id if identity.user else identity.sid, idempotency_key)
+    previous = existing_task(db, task_id, "demo", version.id, baseline_version_ids, None, sample_keys)
+    if previous is not None:
+        return previous
     samples = _resolve_demo_samples(db, version, sample_keys)
     baselines = _resolve_demo_models(db, baseline_version_ids, version)
     user = identity.user
-    task_id = new_id()
     reserved = False
     if user is None:
         reserved = reserve_guest_quota(identity, task_id, settings)
@@ -228,19 +283,32 @@ def create_demo_task(
             preprocess_id=baselines[0].preprocess_id,
             status="queued",
             has_gt=False,
-            error_summary=None,
+            error_summary="QUEUE_PENDING: 已保存，尚未确认入队",
             updated_at=utcnow(),
         )
         db.add(task)
         db.flush()
         _attach_models_and_samples(db, task, baselines, None, samples)
+        freeze_inputs(db, task, samples, settings)
         db.commit()
     except Exception:
+        db.rollback()
         if reserved:
-            release_guest_quota(identity, task_id)
+            # A lost DB commit acknowledgement is also uncertain. Only release
+            # after a successful authoritative read proves no persisted task.
+            try:
+                missing = db.query(Task).filter_by(id=task_id).with_for_update().one_or_none() is None
+            except Exception as exc:
+                logger.error("demo commit outcome unknown task=%s error=%s", task_id, type(exc).__name__)
+                missing = False
+            if missing:
+                _release_reservation(identity, task_id)
         raise
     invalidate_after_write(task.id, user.id if user is not None else None)
-    _enqueue_task(settings, "apps.worker.jobs.run_demo", task.id, settings.demo_job_timeout_sec)
+    delivery = _enqueue_task(settings, "apps.worker.jobs.run_demo", task.id, settings.demo_job_timeout_sec)
+    outcome = apply_task_delivery(db, task, delivery)
+    if reserved and outcome == "rejected":
+        _release_reservation(identity, task.id)
     return task
 
 
@@ -281,6 +349,8 @@ def get_visible_demo_task(db: Session, task_id: str, identity: DemoIdentity) -> 
 def serialize_demo_task(db: Session, task: Task) -> dict:
     if task.type != "demo":
         raise AppError("不是公开演示任务", code="NOT_FOUND", stage="auth", status_code=404)
+    policy = TaskArtifacts(db, task, get_settings())
+    bundle_state = policy.bundle_state()
     preprocess = db.get(PreprocessSpecRow, task.preprocess_id)
     model_rows = (
         db.query(TaskModel, ModelVersion)
@@ -320,7 +390,7 @@ def serialize_demo_task(db: Session, task: Task) -> dict:
                 }
             )
     artifacts = []
-    for artifact in task.artifacts:
+    for artifact in policy.downloadable(bundle_ready=bundle_state["bundle_ready"]):
         if artifact.kind not in DEMO_ARTIFACT_KINDS:
             continue
         artifacts.append(
@@ -333,7 +403,7 @@ def serialize_demo_task(db: Session, task: Task) -> dict:
             }
         )
     preview_keys = sorted(
-        {row["sample_key"] for row in artifacts if row["kind"] == "montage" and row["sample_key"]}
+        {row["sample_key"] for row in artifacts if row["kind"] == "origin" and row["sample_key"]}
     )
     payload = {
         "id": task.id,
@@ -356,8 +426,8 @@ def serialize_demo_task(db: Session, task: Task) -> dict:
         "artifacts": artifacts,
         "legend": NEU_LEGEND,
         "cam_disclaimer": CAM_DISCLAIMER,
-        "bundle_ready": task.status in {"success", "partial_success"},
-        "bundle_url": f"/api/demo/tasks/{task.id}/bundle" if task.status in {"success", "partial_success"} else None,
+        **bundle_state,
+        "bundle_url": f"/api/demo/tasks/{task.id}/bundle" if bundle_state["bundle_ready"] else None,
     }
     for key in GT_LEAK_KEYS:
         payload.pop(key, None)

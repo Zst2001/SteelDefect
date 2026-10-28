@@ -1,0 +1,26 @@
+.cls-scope { min-width: 0; color: var(--lab-text); }
+.cls-notice { padding: 16px 19px; margin-bottom: 20px; border: 1px solid #d7e4f5; border-left: 3px solid #6e9cd7; border-radius: 9px; background: #edf4ff; }
+.cls-notice strong { display: block; font-size: 16px; color: #254e80; }
+.cls-notice p { color: #4f627b; font-size: 14px; line-height: 1.8; margin: 6px 0 0; }
+.cls-panel { min-width: 0; padding: 24px; border: 1px solid #dfe7f2; border-radius: 12px; background: #fff; box-shadow: 0 2px 10px #20375a04; }
+.cls-panel-head { display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-bottom: 20px; }
+.cls-panel-head h2 { margin: 0; font-size: 20px; }
+.cls-panel-head p, .cls-muted { color: #4f627b; font-size: 14px; line-height: 1.75; }
+.cls-panel-head p { margin: 5px 0 0; }
+.cls-count { padding: 5px 9px; border-radius: 5px; background: #edf3fc; color: #275d9b; font-size: 14px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.cls-state { padding: 24px; border: 1px dashed #cfdbeb; border-radius: 8px; color: #4f627b; background: #f8fafc; line-height: 1.75; }
+.cls-state p { margin: 8px 0 12px; overflow-wrap: anywhere; }
+.cls-state.error { background: #fff9f6; border-color: #e5cbbd; }
+.cls-state.error strong { color: #983f25; }
+.cls-error { color: #b73530; font-size: 14px; line-height: 1.7; overflow-wrap: anywhere; }
+.cls-class-list { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 0; padding: 0; list-style: none; }
+.cls-class-list li { padding: 4px 9px; color: #345575; background: #fff; border: 1px solid #d4e1f1; border-radius: 5px; font-size: 13px; }
+.cls-class-list b { margin-right: 6px; color: #647b94; font-family: var(--lab-font-mono); font-weight: 400; }
+.cls-grid { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 20px; align-items: start; }
+.cls-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+.cls-actions .el-button + .el-button { margin-left: 0; }
+.cls-scope button:focus-visible, .cls-scope select:focus-visible, .cls-scope a:focus-visible { outline: 3px solid #8eb8f3; outline-offset: 3px; }
+.cls-scope a { color: #225ed0; }
+.cls-code { font-family: var(--lab-font-mono); font-size: 13px; overflow-wrap: anywhere; }
+@media (max-width: 1100px) { .cls-grid { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 600px) { .cls-panel { padding: 18px 15px; } .cls-notice { padding: 14px; } }

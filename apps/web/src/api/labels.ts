@@ -6,6 +6,7 @@ export function roleLabel(role: string): string {
 }
 
 export function taskPath(type: string, id: string): string {
+  if (type === "classification") return `/classification/${id}`;
   if (type === "eval") return `/eval/${id}`;
   if (type === "demo") return `/demo/${id}`;
   return `/compare/${id}`;

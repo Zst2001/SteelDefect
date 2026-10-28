@@ -1,0 +1,32 @@
+{
+  "scope": "Synthetic CPU smoke; not an accuracy evaluation",
+  "model": "mobilenet_v3_small",
+  "runs": [
+    {
+      "has_gt": false,
+      "images": 2,
+      "task_status": "success",
+      "elapsed_seconds": 0.33057019999978365,
+      "predicted_class_ids": [
+        3,
+        3
+      ],
+      "metrics_available": false,
+      "download_ok": true,
+      "history_ok": true
+    },
+    {
+      "has_gt": true,
+      "images": 2,
+      "task_status": "success",
+      "elapsed_seconds": 0.2938873999992211,
+      "predicted_class_ids": [
+        3,
+        3
+      ],
+      "metrics_available": true,
+      "download_ok": true,
+      "history_ok": true
+    }
+  ]
+}
