@@ -42,6 +42,8 @@ TASK_TYPE_LABELS = {
     "eval": "正式评测",
     "demo": "公开演示",
     "classification": "钢铁缺陷分类",
+    "pcb_segmentation": "PCB 缺陷分割",
+    "pcb_classify": "PCB 缺陷分类",
 }
 
 
@@ -53,7 +55,7 @@ def _can_view_task(task: Task, user: User) -> bool:
     # Logged-in demo access keeps its existing creator/advisor policy.
     if task.type == "demo":
         return True
-    return task.type in {"compare", "eval", "classification"} and task.submitted_to_advisor_at is not None
+    return task.type in {"compare", "eval", "classification", "pcb_segmentation", "pcb_classify"} and task.submitted_to_advisor_at is not None
 
 
 def get_visible_task(db: Session, task_id: str, user: User) -> Task:
@@ -94,8 +96,8 @@ def _resolve_runnable_models(
     version: DatasetVersion,
     max_baselines: int = COMPARE_BASELINE_LIMIT,
 ) -> tuple[list[ModelVersion], ModelVersion | None]:
-    if version.kind == "classification_batch":
-        raise AppError("分类批次不能进入分割任务", code="TASK_KIND_MISMATCH", stage="protocol", status_code=400)
+    if version.kind in {"classification_batch", "pcb_batch", "pcb_cls_batch"}:
+        raise AppError("该场景批次不能进入钢铁分割任务", code="TASK_KIND_MISMATCH", stage="protocol", status_code=400)
     _assert_baseline_count(baseline_version_ids, max_baselines=max_baselines)
 
     baselines = []
@@ -104,9 +106,9 @@ def _resolve_runnable_models(
         if mv is None:
             raise AppError("baseline 不存在", code="MODEL_NOT_FOUND", stage="protocol", status_code=404)
         assert_model_role_access(user, db.get(Model, mv.model_id), mv, "baseline")
-        from app.services.models import is_classification_version
-        if is_classification_version(db, mv):
-            raise AppError("分类模型不能进入分割任务", code="TASK_KIND_MISMATCH", stage="protocol", status_code=400)
+        from app.services.models import is_other_scene_version
+        if is_other_scene_version(db, mv):
+            raise AppError("该场景模型不能进入钢铁分割任务", code="TASK_KIND_MISMATCH", stage="protocol", status_code=400)
         if mv.status != "runnable":
             raise AppError(
                 f"模型当前不能加入任务（状态 {mv.status}）",
@@ -355,6 +357,12 @@ def create_eval_task(
 
 
 def serialize_task(db: Session, task: Task) -> dict:
+    if task.type == "pcb_classify":
+        from app.services.pcb_classification import serialize_task as serialize_pcb_classification
+        return serialize_pcb_classification(db, task)
+    if task.type == "pcb_segmentation":
+        from app.services.pcb_segmentation import serialize_pcb_task
+        return serialize_pcb_task(db, task)
     if task.type == "classification":
         from app.services.classification import serialize_classification_task
         return serialize_classification_task(db, task)
@@ -444,6 +452,11 @@ def serialize_task(db: Session, task: Task) -> dict:
 
 
 def serialize_metrics(task: Task) -> dict:
+    if task.type == "pcb_classify":
+        return {"available": False}
+    if task.type == "pcb_segmentation":
+        from app.services.pcb_segmentation import serialize_pcb_metrics
+        return serialize_pcb_metrics(task)
     if task.type == "classification":
         from app.services.classification import serialize_classification_metrics
         return serialize_classification_metrics(task)

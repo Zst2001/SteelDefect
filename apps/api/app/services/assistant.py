@@ -539,9 +539,9 @@ def _visible_version(db: Session, version_id: str, user: User) -> ModelVersion:
             )
     if version is None or not can_view_version(user, version.model, version):
         raise AppError("模型不存在", code="NOT_FOUND", stage="auth", status_code=404)
-    from app.services.models import is_classification_version
-    if is_classification_version(db, version):
-        raise AppError("科研助手尚未开放分类模型工具，请使用钢铁缺陷分类页", code="UNAVAILABLE", stage="protocol", status_code=400)
+    from app.services.models import is_other_scene_version
+    if is_other_scene_version(db, version):
+        raise AppError("科研助手尚未开放该场景模型工具，请使用对应场景工作台", code="UNAVAILABLE", stage="protocol", status_code=400)
     return version
 
 

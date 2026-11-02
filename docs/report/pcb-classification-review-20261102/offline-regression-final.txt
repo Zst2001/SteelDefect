@@ -1,0 +1,26 @@
+Isolation: init-only settings, SQLite, temporary storage, no .env/network/subprocess/real executors
+........................................................................ [ 11%]
+........................................................................ [ 23%]
+..................................................sss................... [ 34%]
+........................................................................ [ 46%]
+........................................C5 synthetic samples=1: SQL=9 ZIP_OPEN=1 elapsed_ms=37.991
+.C5 synthetic samples=20: SQL=9 ZIP_OPEN=1 elapsed_ms=171.928
+.C5 synthetic samples=50: SQL=9 ZIP_OPEN=1 elapsed_ms=367.133
+.............................. [ 57%]
+........................................................................ [ 69%]
+........................................................................ [ 80%]
+........................................................................ [ 92%]
+..................................................                       [100%]
+============================== warnings summary ===============================
+.venv\Lib\site-packages\fastapi\testclient.py:1
+  F:\360MoveData\Users\40336\Desktop\Bofang\Steel_lab\.venv\Lib\site-packages\fastapi\testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+.venv\Lib\site-packages\starlette\testclient.py:53
+  F:\360MoveData\Users\40336\Desktop\Bofang\Steel_lab\.venv\Lib\site-packages\starlette\testclient.py:53: DeprecationWarning: The anyio.abc.BlockingPortal alias is deprecated, use anyio.from_thread.BlockingPortal instead.
+    _PortalFactoryType = Callable[[], AbstractContextManager[anyio.abc.BlockingPortal]]
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ===========================
+SKIPPED [3] tests\test_task_artifact_access.py:192: Host does not permit creating test symlinks; no production path touched
+623 passed, 3 skipped, 2 warnings in 91.70s (0:01:31)

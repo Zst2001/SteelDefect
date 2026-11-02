@@ -21,7 +21,7 @@ class Delivery:
     job_id: str
 
 
-def enqueue(settings, function: str, object_id: str, timeout: int, *, job_id: str) -> Delivery:
+def enqueue(settings, function: str, object_id: str, timeout: int, *, job_id: str, on_failure: str | None = None) -> Delivery:
     # Older RQ accepts arbitrary kwargs; explicitly check support before sending anything.
     if "unique" not in inspect.signature(Queue.enqueue_call).parameters:
         logger.error("dispatch rejected: RQ unique enqueue unavailable job=%s", job_id)
@@ -34,8 +34,14 @@ def enqueue(settings, function: str, object_id: str, timeout: int, *, job_id: st
         logger.warning("dispatch unavailable before send job=%s", job_id)
         return Delivery("rejected", job_id)
     try:
+        options = {}
+        if on_failure is not None:
+            # Callback accepts a dotted name without importing its target. Keep
+            # the failure handler independent of the heavy job's import path.
+            from rq.job import Callback
+            options["on_failure"] = Callback(on_failure, timeout=20)
         queue.enqueue(function, object_id, job_id=job_id, unique=True,
-                      job_timeout=timeout, result_ttl=86400, failure_ttl=86400)
+                      job_timeout=timeout, result_ttl=86400, failure_ttl=86400, **options)
         logger.info("dispatch confirmed job=%s", job_id)
         return Delivery("confirmed", job_id)
     except Exception as exc:

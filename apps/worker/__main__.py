@@ -16,6 +16,11 @@ from rq import Queue, SimpleWorker  # noqa: E402
 
 def main() -> None:
     settings = get_settings()
+    # Import the job runtime before accepting work. On Windows SimpleWorker,
+    # first-time Torch/OpenCV imports otherwise consume the first job's deadline.
+    # Per-task admission, weight loading and inference still run inside that limit.
+    from apps.worker import jobs  # noqa: F401
+
     connection = rq_connection()
     queue = Queue(settings.rq_queue_name, connection=connection)
     # SimpleWorker keeps L1 builtin modules in-process and works on Windows (no fork).

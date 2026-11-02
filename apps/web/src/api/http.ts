@@ -25,7 +25,7 @@ function submissionSignature(url: string, data: unknown): string {
 http.interceptors.request.use((config) => {
   const url = config.url ?? "";
   if (config.method !== "post" || !(/^\/tasks\/(compare|eval)$/.test(url)
-    || url === "/demo/tasks" || url === "/classification/tasks" || url === "/models/import" || /^\/models\/[^/]+\/perf$/.test(url))) return config;
+    || url === "/demo/tasks" || url === "/classification/tasks" || url === "/scenes/pcb/segmentation/tasks" || url === "/models/import" || /^\/models\/[^/]+\/perf$/.test(url))) return config;
   const signature = submissionSignature(url, config.data);
   const key = pendingSubmissions.get(signature) ?? Array.from(
     crypto.getRandomValues(new Uint8Array(16)), (byte) => byte.toString(16).padStart(2, "0"),

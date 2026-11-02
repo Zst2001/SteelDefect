@@ -1,0 +1,44 @@
+{
+  "status": "PASS",
+  "baseline_files": 273,
+  "changed_existing_files": [
+    "apps/web/src/views/pcb/PcbClassifyNewView.vue",
+    "apps/web/src/views/pcb/PcbClassifyTaskView.vue",
+    "apps/web/src/views/pcb/PcbTabs.vue",
+    "apps/web/src/views/pcb/classification-types.ts",
+    "packages/infer/pcb_classification/catalog.py",
+    "packages/infer/pcb_classification/runtime.py",
+    "scripts/admit_pcb_classification_cpu.py",
+    "tests/check_pcb_classification_admission.py",
+    "tests/check_pcb_classification_browser.mjs",
+    "tests/check_pcb_classification_frontend.mjs",
+    "tests/check_pcb_classification_live.py",
+    "tests/test_pcb_classification.py"
+  ],
+  "unchanged_count": 261,
+  "missing": [],
+  "new_source_files": [
+    "tests/check_pcb_classification_frontend_review.mjs"
+  ],
+  "head": "a662316384d6b0f289baf530a579d6346c0e5d10",
+  "branch": "main",
+  "source_hash": "b8129393deaaff9826cbbee9175a46f63e64c21aa5f40cfc237ed0589b2d2278",
+  "zip_sha256": "bfb1c0ce379a47b5ac9acaa11c990042b1d75eddc99dfd55479a0f619316d8ba",
+  "sidecar_sha256": "14c5dc30f65a68c19fb0c923dfafbfc440094f4f365b92797969dee96b888fe1",
+  "frozen_release_files_verified": 14,
+  "source_files_sha256": {
+    "apps/web/src/views/pcb/PcbClassifyNewView.vue": "d9ea0f1b0868c406df5708636f5c0bb26085f880b714d6477b64945b6c12a375",
+    "apps/web/src/views/pcb/PcbClassifyTaskView.vue": "39f801577774ce58801b3a9cad356a6b691da90b3484d80231b2af0e24725770",
+    "apps/web/src/views/pcb/PcbTabs.vue": "6d74c34aec09e4dd605fa9282129039f757f0b0b04ab9e373935a01ded4c1cf2",
+    "apps/web/src/views/pcb/classification-types.ts": "2928959fa98655c19b35e6d1c25d7bafdc0c096671898b309f63bbcc5016c907",
+    "packages/infer/pcb_classification/catalog.py": "12882b33e63657c33edae00057c1d5cb11b523221d2c3a4cebdbaba5111bb379",
+    "packages/infer/pcb_classification/runtime.py": "92389386f79e07bbb6c250523efb1e49c79827efd042840c2978ebab2f8213b3",
+    "scripts/admit_pcb_classification_cpu.py": "077cc5b6d4f9bd096bc86f23317610f07c7241393a6482f41fc9881b4b04be56",
+    "tests/check_pcb_classification_admission.py": "0474dacff9b358151556fb333b8baaa6712b127f51e7fed0182db77a4f40dd17",
+    "tests/check_pcb_classification_browser.mjs": "e2ca20ec3b6000196a7b2e8a4ed4afae43492cbcaaef0d3de660d65877336408",
+    "tests/check_pcb_classification_frontend.mjs": "865a5430b3051c7a2b6c72a37529bf9b5c5de908dedc70be78b9efaae099a013",
+    "tests/check_pcb_classification_live.py": "5aa62ed0bb292e4552532f76e83e34bb27ab5d5e43c24e147f6d817c1b4cc247",
+    "tests/test_pcb_classification.py": "eb4ab86d72dbd61eae0be15f29530df9a6ff29f52dc6222ae8ed941f24924b57",
+    "tests/check_pcb_classification_frontend_review.mjs": "4c3a3b84408e224bd6e72f630e62236b1a651f0f9db0223871d344f24e8b5e27"
+  }
+}

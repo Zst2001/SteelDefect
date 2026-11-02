@@ -11,6 +11,8 @@ from app.bootstrap import ROOT  # noqa: F401  # path bootstrap
 from app.config import get_settings
 from app.errors import AppError, app_error_handler, error_payload
 from app.routers import admin, assistant, auth, catalog, classification, datasets, demo, health, me, models, records, scenes, tasks, uploads
+from app.routers import pcb_segmentation
+from app.routers import pcb_classification
 
 
 @asynccontextmanager
@@ -57,6 +59,8 @@ app.include_router(auth.router, prefix="/api")
 app.include_router(admin.router, prefix="/api")
 app.include_router(catalog.router, prefix="/api")
 app.include_router(classification.router, prefix="/api")
+app.include_router(pcb_segmentation.router, prefix="/api")
+app.include_router(pcb_classification.router, prefix="/api")
 app.include_router(demo.router, prefix="/api")
 app.include_router(me.router, prefix="/api")
 app.include_router(models.router, prefix="/api")

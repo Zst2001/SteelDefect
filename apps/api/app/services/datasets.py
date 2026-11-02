@@ -30,6 +30,10 @@ def get_visible_dataset(db: Session, user: User, dataset_id: str) -> Dataset:
     dataset = db.get(Dataset, dataset_id)
     if dataset is None:
         raise AppError("数据集不存在", code="NOT_FOUND", stage="file", status_code=404)
+    # Private PCB input/GT is available only through its authorized task.
+    # In particular, advisor catalog access must not bypass task submission.
+    if db.query(DatasetVersion.id).filter(DatasetVersion.dataset_id == dataset.id, DatasetVersion.kind.in_(("pcb_batch", "pcb_cls_batch"))).first() is not None:
+        raise AppError("该批次请从对应任务查看", code="NOT_FOUND", stage="file", status_code=404)
     if not can_view_dataset(user, dataset):
         raise AppError("无权查看该数据集", code="FORBIDDEN", stage="auth", status_code=403)
     return dataset
@@ -108,6 +112,7 @@ def list_dataset_catalog(db: Session, user: User) -> dict:
     # Classification batches are browsed through their authorized task result.
     # Do not render them as empty segmentation datasets with NEU mask legends.
     rows = db.query(Dataset).filter(
+        ~Dataset.versions.any(DatasetVersion.kind.in_(("pcb_batch", "pcb_cls_batch"))),
         ~Dataset.versions.any(DatasetVersion.kind == "classification_batch")
         | Dataset.versions.any(DatasetVersion.kind.in_(CATALOG_KINDS))
     ).all()

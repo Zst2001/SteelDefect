@@ -6,6 +6,8 @@ export function roleLabel(role: string): string {
 }
 
 export function taskPath(type: string, id: string): string {
+  if (type === "pcb_classify") return `/inspect/pcb/classification/tasks/${id}`;
+  if (type === "pcb_segmentation") return `/inspect/pcb/tasks/${id}`;
   if (type === "classification") return `/classification/${id}`;
   if (type === "eval") return `/eval/${id}`;
   if (type === "demo") return `/demo/${id}`;

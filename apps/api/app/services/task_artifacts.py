@@ -14,7 +14,7 @@ from pathlib import Path
 
 from sqlalchemy.orm import Session
 
-from app.db.models import Artifact, Dataset, DatasetVersion, Model, ModelVersion, Sample, Task, TaskModel, TaskSample
+from app.db.models import Artifact, Dataset, DatasetVersion, Model, ModelVersion, PreprocessSpecRow, Sample, Task, TaskModel, TaskSample
 from app.errors import AppError
 
 BUNDLE_UNAVAILABLE = "图层包尚未生成或未通过安全校验，请联系管理员核查。"
@@ -90,6 +90,41 @@ class TaskArtifacts:
         self.gt_sensitive = bool(task.has_gt or task.type == "eval" or (version and (
             version.is_fixed_test or version.forbid_student_gt_download
         )))
+        if task.type == "pcb_classify":
+            from infer.pcb_classification.catalog import MODELS, PROTOCOL
+            task_spec = db.get(PreprocessSpecRow, task.preprocess_id)
+            links = db.query(TaskModel).filter_by(task_id=task.id).count()
+            self.valid = bool(
+                version and version.kind == "pcb_cls_batch" and not version.is_fixed_test
+                and not version.forbid_student_gt_download and dataset
+                and dataset.owner_id == task.creator_id and dataset.visibility == "private"
+                and task_spec and task_spec.dataset == PROTOCOL and version.preprocess_id == task_spec.id
+                and not task.has_gt and len(samples) == len(self.samples) == 1 and self.samples == {"image"}
+                and not samples[0].mask_uri and links == len(models) == len(self.models) == 1
+                and all(tm.role == "baseline" and model.source == "builtin" and model.owner_id is None
+                        and mv.slug in MODELS and mv.num_classes == 6 and mv.in_channels == 3
+                        and mv.input_h == mv.input_w == 224 and mv.preprocess_id == task_spec.id
+                        for tm, mv, model in models))
+        if task.type == "pcb_segmentation":
+            from infer.pcb.runtime import MODELS
+            task_spec = db.get(PreprocessSpecRow, task.preprocess_id)
+            batch_spec = db.get(PreprocessSpecRow, version.preprocess_id) if version else None
+            links = db.query(TaskModel).filter_by(task_id=task.id).count()
+            self.valid = bool(
+                version and version.kind == "pcb_batch" and not version.is_fixed_test
+                and not version.forbid_student_gt_download and dataset
+                and dataset.owner_id == task.creator_id and dataset.visibility == "private"
+                and task_spec and batch_spec
+                and task_spec.dataset == batch_spec.dataset == "pcb_meiwei_v2"
+                and len(samples) == len(self.samples) == 1 and self.samples == {"image"}
+                and bool(samples[0].mask_uri) == bool(task.has_gt)
+                and links == len(models) == len(self.models) == 1
+                and all(tm.role == "baseline" and model.source == "builtin" and model.owner_id is None
+                        and mv.slug in MODELS and mv.num_classes == 2 and mv.in_channels == 3
+                        and mv.input_h == mv.input_w == 256 and mv.preprocess_id == batch_spec.id
+                        for tm, mv, model in models)
+            )
+            self.allow_gt = self.valid and bool(task.has_gt)
 
     def permitted(self, a: Artifact, *, member: bool = False) -> bool:
         if not self.valid or a.task_id != self.task.id or self.unique.get(a.rel_path) is not a:
@@ -99,6 +134,22 @@ class TaskArtifacts:
         except AppError:
             return False
         key, mid, kind = a.sample_key, a.model_version_id, a.kind
+        if self.task.type == "pcb_classify":
+            if self.task.status != "success" or mid is not None:
+                return False
+            return ((kind == "pcb_cls_result" and key is None and a.rel_path == "pcb_classification.json")
+                    or (kind == "origin" and key == "image" and a.rel_path == "origin/image.png"))
+        if self.task.type == "pcb_segmentation":
+            if self.task.status != "success":
+                return False
+            if kind == "pcb_result":
+                return key is None and mid is None and a.rel_path == "pcb.json"
+            if key != "image":
+                return False
+            if kind in {"origin", "gt"}:
+                return mid is None and a.rel_path == f"{kind}/image.png" and (kind != "gt" or self.allow_gt)
+            return (mid in self.models and kind in {"pred_mask", "mask_visual", "overlay", "boundary", "probability", "cam", "error"}
+                    and a.rel_path == f"{kind}/{mid}/image.png" and (kind != "error" or self.allow_gt))
         if self.task.type == "classification":
             if kind == "classification_result":
                 return (key is None and mid is None and a.rel_path == "classification.json"
@@ -197,6 +248,10 @@ class TaskArtifacts:
         return result
 
     def bundle_state(self) -> dict:
+        if self.task.type == "pcb_classify":
+            return {"bundle_ready": False, "bundle_unavailable_reason": "PCB 分类仅提供受控 JSON 与 ROI 预览。"}
+        if self.task.type == "pcb_segmentation":
+            return {"bundle_ready": False, "bundle_unavailable_reason": "PCB 图层与结果请在任务详情逐项下载。"}
         if self.task.type == "classification":
             return {"bundle_ready": False, "bundle_unavailable_reason": "分类不生成分割图层包，请在任务详情查看或下载分类结果。"}
         ready = False

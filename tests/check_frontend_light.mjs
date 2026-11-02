@@ -69,6 +69,7 @@ try {
     if (!key.startsWith('/api/')) return route.continue();
     apiCalls.push({ key, method: request.method(), body: request.postDataJSON?.bind(request) });
     const json = data => route.fulfill({ json: data });
+    if (key === '/api/scenes/pcb/segmentation/models') return json({ enabled: false, available: false, models: [], default_model: 'unet', max_image_bytes: 2097152 });
     if (failingPaths.has(key)) return route.fulfill({ status: 503, json: { code: 'TEST_READ_UNAVAILABLE', message: '验收模拟：读取失败，请重试' } });
     if (key === '/api/records' && raceRecords && url.searchParams.get('type')) {
       const old = url.searchParams.get('type') === 'compare';
@@ -214,10 +215,12 @@ try {
   await capture('07-public-demo'); await page.getByRole('button', { name: '开始演示', exact: true }).click();
   await page.waitForURL('**/demo/synthetic-demo'); await page.waitForLoadState('networkidle');
   check(await page.locator('.metrics').count() === 0, 'demo result never exposes metric panel');
-  // Steel classification now has a dedicated upload/result acceptance suite.
-  for (const route of ['/inspect/steel/detection', '/inspect/pcb', '/inspect/solar']) {
+  // Steel classification and PCB segmentation have dedicated acceptance suites.
+  for (const route of ['/inspect/steel/detection', '/inspect/solar']) {
     await go(route); check(await page.getByRole('button', { name: '提交任务（未开放）', exact: true }).isDisabled(), `${route}: submission remains disabled`);
   }
+  await go('/inspect/pcb');
+  check(await page.getByRole('button', { name: '开始 PCB 分割', exact: true }).isDisabled(), 'PCB segmentation stays disabled without explicit opt-in and admission');
   signedIn = false; await go('/'); check(await page.locator('html').getAttribute('class') === 'workbench-light', 'public homepage uses the unified light theme');
   check(await page.locator('body').textContent().then(x => x.includes('实验室现未来将')), 'original laboratory introduction retained in homepage');
   check(await page.locator('.brand .title').innerText() === 'IPPI LAB' && await page.locator('.brand .sub').innerText() === '智能感知与精密工业检测实验室', 'sidebar uses requested IPPI LAB identity');

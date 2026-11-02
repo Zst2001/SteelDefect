@@ -26,6 +26,12 @@ assets/baselines/neu/best_pspnet.pth
 # Administrator-provided NEU-CLS deployment assets; install locally from verified exports.
 assets/classification/neu_cls_v1/
 
+# Private PCB transfer package and independently verified local staging assets.
+assets/PCB_segment/
+assets/pcb/
+assets/PCB_fenlei/
+assets/pcb_classification/
+
 # Full NEU corpus is seeded from disk; do not commit the image files.
 assets/datasets/neu/images/*
 !assets/datasets/neu/images/.gitkeep

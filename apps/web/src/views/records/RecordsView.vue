@@ -19,6 +19,8 @@
         <el-option label="快速对比" value="compare" />
         <el-option label="正式评测" value="eval" />
         <el-option label="缺陷分类" value="classification" />
+        <el-option label="PCB 表面分割" value="pcb_segmentation" />
+        <el-option label="PCB 缺陷分类" value="pcb_classify" />
       </el-select></label>
       <label class="filter-field"><span>运行状态</span><el-select v-model="status" placeholder="全部状态" aria-label="运行状态" clearable @change="resetAndReload">
         <el-option label="排队中" value="queued" />
@@ -72,7 +74,7 @@
           <div class="row-actions">
           <router-link class="view-link" :to="row.open_path"><el-icon><View /></el-icon>查看</router-link>
           <el-button v-if="row.bundle_ready" link type="primary" @click="download(row)"><el-icon><Download /></el-icon>图层包</el-button>
-          <span v-else-if="row.type !== 'classification' && ['success', 'partial_success'].includes(row.status)" class="unavailable" :title="row.bundle_unavailable_reason">图层包不可用</span>
+          <span v-else-if="!['classification', 'pcb_segmentation', 'pcb_classify'].includes(row.type) && ['success', 'partial_success'].includes(row.status)" class="unavailable" :title="row.bundle_unavailable_reason">图层包不可用</span>
           <el-dropdown v-if="row.can_rerun || row.can_submit || row.can_withdraw || row.can_analyze || row.can_note || row.can_archive" trigger="click">
             <el-button link type="primary" aria-label="更多记录操作">更多 ▾</el-button>
             <template #dropdown><el-dropdown-menu>
@@ -108,7 +110,7 @@
 <script setup lang="ts">
 import TaskStatus from "../../components/TaskStatus.vue";
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
-import { useRouter } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { DataAnalysis, Download, Filter, FolderOpened, InfoFilled, Picture, Tickets, VideoPlay, View } from "@element-plus/icons-vue";
 import { formatError, http } from "../../api/http";
@@ -138,8 +140,9 @@ type RecordRow = {
 
 const role = ref<"student" | "advisor">("student");
 const router = useRouter();
+const route = useRoute();
 const scope = ref<"mine" | "inbox">("mine");
-const type = ref<string>("");
+const type = ref<string>(["compare", "eval", "demo", "classification", "pcb_segmentation", "pcb_classify"].includes(String(route.query.type)) ? String(route.query.type) : "");
 const status = ref<string>("");
 const inboxState = ref<string>("");
 const archived = ref(false);

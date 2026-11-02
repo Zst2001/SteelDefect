@@ -18,7 +18,7 @@ from app.services.tasks import (
 from app.util_time import new_id, utcnow
 
 DONE = {"success", "partial_success"}
-LAB_TYPES = {"compare", "eval", "classification"}
+LAB_TYPES = {"compare", "eval", "classification", "pcb_segmentation", "pcb_classify"}
 PAGE_SIZE_MAX = 50
 
 
@@ -79,7 +79,7 @@ def record_flags(task: Task, user: User) -> dict:
             and not submitted
         ),
         "can_withdraw": owner and submitted and task.advisor_seen_at is None,
-        "can_rerun": owner and not task.archived and task.type in {"compare", "eval", "demo", "classification"},
+        "can_rerun": owner and not task.archived and task.type in LAB_TYPES | {"demo"},
         "can_archive": owner,
         "can_note": owner,
         "can_analyze": task.type in {"compare", "eval"} and task.status in DONE,
@@ -107,6 +107,10 @@ def serialize_record(db: Session, task: Task, user: User) -> dict:
 
 
 def _open_path(task: Task) -> str:
+    if task.type == "pcb_classify":
+        return f"/inspect/pcb/classification/tasks/{task.id}"
+    if task.type == "pcb_segmentation":
+        return f"/inspect/pcb/tasks/{task.id}"
     if task.type == "classification":
         return f"/classification/{task.id}"
     if task.type == "eval":
@@ -162,7 +166,7 @@ def list_records(
     if scope != "inbox":
         query = query.filter(Task.archived.is_(archived))
     if type:
-        if type not in {"compare", "eval", "demo", "classification"}:
+        if type not in LAB_TYPES | {"demo"}:
             raise AppError("任务类型无效", code="BAD_TYPE", stage="protocol", status_code=400)
         if scope == "inbox" and type == "demo":
             return {"page": page, "page_size": page_size, "total": 0, "items": []}
@@ -264,6 +268,19 @@ def rerun_record(db: Session, user: User, task_id: str) -> Task:
     verify_inputs(db, source, get_settings())
     if not baselines:
         raise AppError("原任务没有可再跑的模型", code="NO_MODELS", stage="protocol", status_code=400)
+    if source.type == "pcb_classify":
+        from app.services.pcb_classification import create_task
+        versions = [db.get(ModelVersion, vid) for vid in baselines]
+        if student_id or len(versions) != 1 or versions[0] is None:
+            raise AppError("PCB 分类模型不完整", code="MODEL_ROLE_INVALID", stage="protocol", status_code=400)
+        return create_task(db, user, batch_id=source.dataset_version_id, model_id=versions[0].slug)
+    if source.type == "pcb_segmentation":
+        from app.services.pcb_segmentation import create_pcb_task, task_include_cam
+        versions = [db.get(ModelVersion, vid) for vid in baselines]
+        if student_id or len(versions) != 1 or versions[0] is None:
+            raise AppError("PCB 任务模型不完整或角色不匹配", code="MODEL_ROLE_INVALID", stage="protocol", status_code=400)
+        return create_pcb_task(db, user, batch_id=source.dataset_version_id,
+                               model_id=versions[0].slug, include_cam=task_include_cam(db, source))
     if source.type == "classification":
         from app.services.classification import create_classification_task
         versions = [db.get(ModelVersion, vid) for vid in baselines]

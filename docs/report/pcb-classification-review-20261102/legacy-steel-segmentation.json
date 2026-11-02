@@ -1,0 +1,73 @@
+{
+  "status": "PASS",
+  "model": "steel builtin UNet",
+  "weight_sha256": "d7b43b61db9d226ffec3ffce0fa3ee4c255def4935c7c843a66b2d8b881064fe",
+  "scope": "real CPU inference; temporary SQLite/private storage; fake queue; HTTP dependency auth fixtures",
+  "loading": "test-only fixed-hash weights_only=True reader + existing strict builder; production loader unchanged",
+  "data": "synthetic input and GT; not accuracy evaluation; official NEU-20 untouched",
+  "runs": [
+    {
+      "mode": "compare_no_gt",
+      "status": "success",
+      "elapsed_seconds": 4.690303100000165,
+      "metric_rows": 0,
+      "downloaded_layers": 4,
+      "bundle_download": "PASS",
+      "kind_set": [
+        "boundary",
+        "bundle",
+        "cam",
+        "log",
+        "montage",
+        "origin",
+        "overlay",
+        "pred_color"
+      ]
+    },
+    {
+      "mode": "compare_gt",
+      "status": "success",
+      "elapsed_seconds": 1.8968070999981137,
+      "metric_rows": 1,
+      "downloaded_layers": 6,
+      "bundle_download": "PASS",
+      "kind_set": [
+        "boundary",
+        "bundle",
+        "cam",
+        "error",
+        "gt",
+        "log",
+        "montage",
+        "origin",
+        "overlay",
+        "pred_color"
+      ]
+    },
+    {
+      "mode": "demo",
+      "status": "success",
+      "elapsed_seconds": 1.8968352999982017,
+      "metric_rows": 0,
+      "downloaded_layers": 4,
+      "bundle_download": "PASS",
+      "kind_set": [
+        "boundary",
+        "bundle",
+        "cam",
+        "log",
+        "montage",
+        "origin",
+        "overlay",
+        "pred_color"
+      ]
+    }
+  ],
+  "safety": {
+    "env_read": false,
+    "network": false,
+    "student_execution": false,
+    "production_data_modified": false,
+    "unsafe_pickle": false
+  }
+}

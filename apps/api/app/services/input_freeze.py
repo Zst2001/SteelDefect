@@ -75,6 +75,12 @@ def freeze_inputs(db, task, samples, settings):
                    "task_type": task.type, "has_gt": bool(task.has_gt), "samples": rows}
         if task.type == "classification":
             payload["classification"] = classification_snapshot(db, task)
+        if task.type == "pcb_classify":
+            from app.services.pcb_classification import snapshot
+            payload["pcb_classify"] = snapshot(db, task)
+        if task.type == "pcb_segmentation":
+            from app.services.pcb_segmentation import pcb_snapshot
+            payload["pcb_segmentation"] = pcb_snapshot(db, task)
         path = manifest_path(settings, task.id)
         path.parent.mkdir(parents=True, exist_ok=True)
         with path.open("x", encoding="utf-8") as handle:
@@ -90,6 +96,14 @@ def verify_inputs(db, task, settings):
             raise ValueError("task changed")
         if task.type == "classification" and payload.get("classification") != classification_snapshot(db, task):
             raise ValueError("classification inputs changed")
+        if task.type == "pcb_classify":
+            from app.services.pcb_classification import snapshot
+            if payload.get("pcb_classify") != snapshot(db, task):
+                raise ValueError("PCB classification inputs changed")
+        if task.type == "pcb_segmentation":
+            from app.services.pcb_segmentation import pcb_snapshot
+            if payload.get("pcb_segmentation") != pcb_snapshot(db, task):
+                raise ValueError("PCB inputs or protocol changed")
         links = db.query(TaskSample).filter_by(task_id=task.id).order_by(TaskSample.sort_order).populate_existing().with_for_update().all()
         if [s.sample_id for s in links] != [r["sample_id"] for r in payload["samples"]]:
             raise ValueError("links changed")

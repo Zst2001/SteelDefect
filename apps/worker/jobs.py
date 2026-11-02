@@ -29,6 +29,7 @@ from app.services.demo import assert_demo_worker_contract
 from app.services.models import assert_model_role_access
 from app.services.input_freeze import verify_inputs, lock_version
 from rq import get_current_job
+from rq.timeouts import JobTimeoutException
 from app.services.storage import resolve_uri
 from app.services.task_artifacts import write_bundle
 from app.util_time import new_id, utcnow
@@ -188,6 +189,14 @@ def run_classification(task_id: str) -> None:
     _run_task(task_id, expected_types=("classification",))
 
 
+def run_pcb_segmentation(task_id: str) -> None:
+    _run_task(task_id, expected_types=("pcb_segmentation",))
+
+
+def run_pcb_classification(task_id: str) -> None:
+    _run_task(task_id, expected_types=("pcb_classify",))
+
+
 def _assert_lab_execution_authorized(db: Session, task: Task) -> None:
     """Validate the whole task before ANY executor runs, using current DB grants."""
     # Lock current grants until queued -> running commits. A concurrent revocation
@@ -198,7 +207,7 @@ def _assert_lab_execution_authorized(db: Session, task: Task) -> None:
     )
     if user is None or user.status != "active":
         raise AppError("任务创建者当前不可运行任务", code="TASK_ACTOR_UNAVAILABLE", stage="auth")
-    if task.type == "classification":
+    if task.type in {"classification", "pcb_segmentation", "pcb_classify"}:
         # Classification's caller immediately checks its complete contract using
         # the same protocol -> model -> version lock order as builtin registration.
         return
@@ -220,9 +229,9 @@ def _assert_lab_execution_authorized(db: Session, task: Task) -> None:
             .populate_existing().with_for_update().one_or_none()
         )
         assert_model_role_access(user, model, version, link.role)
-        from app.services.models import is_classification_version
-        if task.type != "classification" and is_classification_version(db, version):
-            raise AppError("分类模型不能进入分割执行器", code="TASK_KIND_MISMATCH", stage="protocol")
+        from app.services.models import is_other_scene_version
+        if is_other_scene_version(db, version):
+            raise AppError("该场景模型不能进入钢铁分割执行器", code="TASK_KIND_MISMATCH", stage="protocol")
         if version.status != "runnable":
             raise AppError("任务模型当前不可运行", code="MODEL_NOT_RUNNABLE", stage="protocol")
         if version.requires_cuda:
@@ -251,11 +260,17 @@ def _run_task(task_id: str, expected_types: tuple[str, ...]) -> None:
         if task.status != "queued":
             return
         owns_attempt = True
-        if task.type in {"compare", "eval", "classification"}:
+        if task.type in {"compare", "eval", "classification", "pcb_segmentation", "pcb_classify"}:
             _assert_lab_execution_authorized(db, task)
         if task.type == "classification":
             from apps.worker.classification import assert_classification_execution
             assert_classification_execution(db, task, settings)
+        if task.type == "pcb_classify":
+            from apps.worker.pcb_classification import assert_execution
+            assert_execution(db, task, settings)
+        if task.type == "pcb_segmentation":
+            from apps.worker.pcb_segmentation import assert_pcb_execution
+            assert_pcb_execution(db, task, settings)
         verify_inputs(db, task, settings)
         task.error_summary = None
         task.status = "running"
@@ -268,9 +283,22 @@ def _run_task(task_id: str, expected_types: tuple[str, ...]) -> None:
         elif task.type == "classification":
             from apps.worker.classification import run_classification_body
             run_classification_body(db, task, settings)
+        elif task.type == "pcb_classify":
+            from apps.worker.pcb_classification import run_body
+            run_body(db, task, settings)
+        elif task.type == "pcb_segmentation":
+            from apps.worker.pcb_segmentation import run_pcb_body
+            run_pcb_body(db, task, settings)
         else:
             _run_compare_body(db, task, settings)
     except Exception as exc:
+        failure = exc
+        if expected_types == ("pcb_classify",) and isinstance(exc, JobTimeoutException):
+            failure = AppError("PCB 分类任务超过执行时限，请再跑", code="PCB_CLS_JOB_TIMEOUT", stage="resource")
+        if expected_types == ("pcb_segmentation",) and isinstance(exc, JobTimeoutException):
+            # The first admission/permission check runs before the PCB body;
+            # its deadline needs the same terminal metadata as a body timeout.
+            failure = AppError("PCB 任务超过执行时限，请通过再跑创建新任务", code="PCB_JOB_TIMEOUT", stage="resource")
         db.rollback()
         # A failed lookup/lock is not ownership. After rollback another worker
         # may have claimed the queued task, so recheck under a current row lock.
@@ -278,15 +306,17 @@ def _run_task(task_id: str, expected_types: tuple[str, ...]) -> None:
                 if owns_attempt else None)
         if task is not None and task.status == ("running" if started else "queued"):
             task.status = "failed"
-            task.error_summary = f"{exc.code}: {exc.message}" if isinstance(exc, AppError) else str(exc)
-            if isinstance(exc, AppError):
+            task.error_summary = f"{failure.code}: {failure.message}" if isinstance(failure, AppError) else str(failure)
+            if isinstance(failure, AppError):
                 for link in db.query(TaskModel).filter(TaskModel.task_id == task.id).all():
                     link.status = "failed"
-                    link.fail_stage = exc.stage
+                    link.fail_stage = failure.stage
                     link.fail_message = task.error_summary
             task.updated_at = utcnow()
             db.commit()
             invalidate_after_write(task.id, task.creator_id)
+        if failure is not exc:
+            raise failure from exc
         raise
     finally:
         db.close()
@@ -685,6 +715,12 @@ def run_perf(version_id: str) -> None:
         db.commit()
         started = True
         invalidate_models_lists()
+        from app.services.models import is_other_scene_version
+        if is_other_scene_version(db, version):
+            mark_measure_failed(db, version, model, "该场景模型不能使用钢铁分割测参执行器。")
+            db.commit()
+            invalidate_models_lists()
+            return
         if version.status != "runnable" or version.requires_cuda:
             mark_measure_failed(db, version, model, "只有当前环境可运行的版本才能测量。")
             db.commit()

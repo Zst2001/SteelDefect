@@ -12,6 +12,10 @@ import sys
 import time
 
 if __name__ == "__main__":
+    import argparse
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--report", type=Path)
+    args = parser.parse_args()
     platform.uname()
     # Preserve only this reviewed trusted CPU executor before the normal runner
     # disables all executors. The test injects it into this worker only.
@@ -20,6 +24,7 @@ if __name__ == "__main__":
     import torch
     trusted._explicit_cpu_smoke_predict = trusted.predict_images
     trusted._explicit_cpu_smoke_load = torch.load
+    trusted._explicit_cpu_smoke_report = args.report
     print("EXPLICIT CPU SMOKE: only trusted MobileNet prediction is restored inside this test; all other runner isolation remains enabled.")
     namespace = runpy.run_path(str(Path(__file__).with_name("run_phase_a_tests.py")))
     namespace["DEFAULT_TARGETS"].append("tests/check_classification_cpu_flow.py")
@@ -89,6 +94,6 @@ def test_real_mobilenet_cpu_http_flow(lab, monkeypatch):
         with client(lab, lab.peer) as http:
             assert http.get(f"/api/tasks/{task_id}").status_code == 404
             assert http.get(result["result_download_url"]).status_code == 404
-    destination = Path(__file__).resolve().parents[1] / "docs/report/classification-2026-10-28/cpu-http-flow.json"
+    destination = trusted._explicit_cpu_smoke_report or (Path(__file__).resolve().parents[1] / "docs/report/classification-2026-10-28/cpu-http-flow.json")
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.write_text(json.dumps(evidence, ensure_ascii=False, indent=2), encoding="utf-8")

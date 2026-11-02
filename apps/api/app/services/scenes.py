@@ -25,7 +25,9 @@ SCENES: list[dict] = [
         "id": "pcb",
         "name": "PCB板",
         "tasks": [
-            {"kind": "detection", "label": "缺陷检测", "status": "empty", "path": "/inspect/pcb"},
+            {"kind": "segmentation", "label": "缺陷分割", "status": "empty", "path": "/inspect/pcb"},
+            {"kind": "classification", "label": "缺陷分类", "status": "empty", "path": "/inspect/pcb/classification"},
+            {"kind": "detection", "label": "目标检测", "status": "empty", "path": "/inspect/pcb"},
         ],
     },
     {
@@ -45,11 +47,20 @@ def classification_ready() -> bool:
     return any(row.get("available") for row in catalog())
 
 
+def pcb_ready() -> bool:
+    from app.services.pcb_segmentation import catalog_payload
+    payload = catalog_payload()
+    return bool(payload["enabled"] and payload["available"])
+
+
 def list_scenes() -> dict:
     scenes = deepcopy(SCENES)
     for task in scenes[0]["tasks"]:
         if task["kind"] == "classification":
             task["status"] = "open" if classification_ready() else "empty"
+    scenes[1]["tasks"][0]["status"] = "open" if pcb_ready() else "empty"
+    from app.services.pcb_classification import catalog_payload
+    scenes[1]["tasks"][1]["status"] = "open" if catalog_payload()["available"] else "empty"
     return {"scenes": scenes}
 
 

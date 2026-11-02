@@ -35,6 +35,11 @@ class Settings(BaseSettings):
     compare_job_timeout_sec: int = 7200
     eval_job_timeout_sec: int = 7200
     demo_job_timeout_sec: int = 7200
+    # Explicit deployment opt-in; admission of all three PCB models is also required.
+    pcb_segmentation_enabled: bool = False
+    pcb_job_timeout_sec: int = 120
+    pcb_classification_enabled: bool = False
+    pcb_classification_job_timeout_sec: int = 120
     eval_montage_samples: int = 8
     cache_task_ttl_sec: int = 60
     cache_models_ttl_sec: int = 600

@@ -176,7 +176,7 @@ class Task(Base):
     __tablename__ = "tasks"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    type: Mapped[str] = mapped_column(String(16), nullable=False, index=True)  # compare | eval | demo | classification
+    type: Mapped[str] = mapped_column(String(16), nullable=False, index=True)  # compare | eval | demo | classification | pcb_segmentation | pcb_classify
     creator_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("users.id"), nullable=True, index=True)
     guest_sid: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
     guest_ip_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)

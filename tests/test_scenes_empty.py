@@ -4,6 +4,7 @@ import json
 import sys
 from pathlib import Path
 from types import SimpleNamespace
+import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT), str(ROOT / "packages"), str(ROOT / "third_party"), str(ROOT / "apps" / "api")]
@@ -17,6 +18,12 @@ from app.errors import AppError, app_error_handler
 from app.routers.scenes import router
 
 FORBIDDEN = ("miou", "mdice", "map", "f1", "accuracy", "precision", "recall")
+
+
+@pytest.fixture(autouse=True)
+def pcb_disabled_by_default(monkeypatch):
+    from app.services import scenes
+    monkeypatch.setattr(scenes, "pcb_ready", lambda: False)
 
 
 def _db():
@@ -76,11 +83,10 @@ def test_scene_list_marks_pcb_and_solar_detection_empty(monkeypatch) -> None:
     assert paths["classification"] == "/inspect/steel/classification"
     assert by_id["pcb"]["tasks"][0]["path"] == "/inspect/pcb"
     assert by_id["solar"]["tasks"][0]["path"] == "/inspect/solar"
-    for scene in ("pcb", "solar"):
-        tasks = by_id[scene]["tasks"]
-        assert len(tasks) == 1
-        assert tasks[0]["kind"] == "detection"
-        assert tasks[0]["status"] == "empty"
+    assert {task["kind"]: task["status"] for task in by_id["pcb"]["tasks"]} == {"segmentation": "empty", "classification": "empty", "detection": "empty"}
+    assert len(by_id["solar"]["tasks"]) == 1
+    assert by_id["solar"]["tasks"][0]["kind"] == "detection"
+    assert by_id["solar"]["tasks"][0]["status"] == "empty"
 
 
 def test_only_steel_classification_opens_when_assets_are_ready(monkeypatch) -> None:
@@ -90,9 +96,21 @@ def test_only_steel_classification_opens_when_assets_are_ready(monkeypatch) -> N
     steel = {row["kind"]: row["status"] for row in by_id["steel"]["tasks"]}
     assert steel["classification"] == "open"
     assert steel["detection"] == "empty"
-    for scene in ("pcb", "solar"):
-        assert len(by_id[scene]["tasks"]) == 1
-        assert by_id[scene]["tasks"][0]["status"] == "empty"
+    assert all(task["status"] == "empty" for task in by_id["pcb"]["tasks"])
+    assert len(by_id["solar"]["tasks"]) == 1
+    assert by_id["solar"]["tasks"][0]["status"] == "empty"
+
+
+def test_pcb_segmentation_gate_does_not_open_detection(monkeypatch):
+    from app.services import scenes
+    monkeypatch.setattr(scenes, "classification_ready", lambda: False)
+    monkeypatch.setattr(scenes, "pcb_ready", lambda: True)
+    payload = _client(signed_in=True).get("/api/scenes").json()
+    _assert_no_metrics(payload)
+    pcb = {task["kind"]: task["status"] for task in payload["scenes"][1]["tasks"]}
+    assert pcb == {"segmentation": "open", "classification": "empty", "detection": "empty"}
+    response = _client(signed_in=True).post("/api/scenes/pcb/detection/tasks")
+    assert response.status_code == 409 and response.json()["code"] == "SCENE_EMPTY"
 
 
 def test_empty_detection_get_has_no_metrics() -> None:
@@ -110,6 +128,15 @@ def test_empty_detection_get_has_no_metrics() -> None:
             "runnable": False,
             "message": "缺陷检测尚未接入权重与推理，不能提交任务。",
         }
+
+
+def test_pcb_classification_gate_is_independent(monkeypatch):
+    from app.services import scenes, pcb_classification
+    monkeypatch.setattr(scenes, "pcb_ready", lambda: False)
+    monkeypatch.setattr(pcb_classification, "catalog_payload", lambda: {"available": True})
+    rows = _client(signed_in=True).get("/api/scenes").json()["scenes"][1]["tasks"]
+    assert {r["kind"]: r["status"] for r in rows} == {"segmentation": "empty", "classification": "open", "detection": "empty"}
+    assert next(r["path"] for r in rows if r["kind"] == "classification") == "/inspect/pcb/classification"
 
 
 def test_empty_detection_post_is_rejected() -> None:

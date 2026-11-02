@@ -15,6 +15,12 @@ def is_classification_version(db: Session, version: ModelVersion) -> bool:
     return bool(spec and spec.dataset == "neu_cls")
 
 
+def is_other_scene_version(db: Session, version: ModelVersion) -> bool:
+    """Trusted classification/PCB catalogs never feed the steel segmentation runner."""
+    spec = db.get(PreprocessSpecRow, version.preprocess_id)
+    return bool(spec and spec.dataset in {"neu_cls", "pcb_meiwei_v2", "pcb_cls_deeppcb_roi_v0"})
+
+
 def can_view_version(user: User, model: Model, version: ModelVersion) -> bool:
     if model.source == "builtin":
         return True
@@ -129,7 +135,7 @@ def list_visible_versions(db: Session, user: User) -> list[dict]:
     for version in rows:
         # Classification has its own validated catalog and Bx6 executor.
         # The default model catalog feeds segmentation forms and assistant tools.
-        if is_classification_version(db, version):
+        if is_other_scene_version(db, version):
             continue
         model = version.model
         if can_view_version(user, model, version):

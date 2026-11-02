@@ -18,7 +18,7 @@ from app.services.models import (
     can_view_version,
     group_model_items,
     list_visible_versions,
-    is_classification_version,
+    is_other_scene_version,
     serialize_version,
 )
 from app.services.perf import request_measure, serialize_perf
@@ -52,8 +52,8 @@ def _visible_version(db: Session, version_id: str, user: User) -> ModelVersion:
     version = _load_version(db, version_id)
     if version is None or not can_view_version(user, version.model, version):
         raise AppError("模型不存在", code="NOT_FOUND", stage="auth", status_code=404)
-    if is_classification_version(db, version):
-        raise AppError("分类模型请从钢铁缺陷分类页访问", code="TASK_KIND_MISMATCH", stage="protocol", status_code=409)
+    if is_other_scene_version(db, version):
+        raise AppError("该模型请从对应场景工作台访问", code="TASK_KIND_MISMATCH", stage="protocol", status_code=409)
     return version
 
 

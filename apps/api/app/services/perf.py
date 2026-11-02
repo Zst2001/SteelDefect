@@ -128,9 +128,9 @@ def serialize_perf(
 
 def request_measure(db: Session, version: ModelVersion, model: Model, *, idempotency_key: str | None = None) -> ModelPerfProfile:
     version = db.query(ModelVersion).filter_by(id=version.id).populate_existing().with_for_update().one()
-    from app.services.models import is_classification_version
-    if is_classification_version(db, version):
-        raise AppError("分类模型不使用分割测参执行器", code="TASK_KIND_MISMATCH", stage="protocol", status_code=400)
+    from app.services.models import is_other_scene_version
+    if is_other_scene_version(db, version):
+        raise AppError("该场景模型不使用钢铁分割测参执行器", code="TASK_KIND_MISMATCH", stage="protocol", status_code=400)
     if version.requires_cuda:
         raise AppError(
             "当前环境为 CPU，该模型标明需要 CUDA，不可测量。不会静默改用随机权重。",

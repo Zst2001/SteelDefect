@@ -34,7 +34,7 @@
         <el-sub-menu index="defect">
           <template #title><el-icon v-if="isLight"><Aim /></el-icon>缺陷检测</template>
           <el-menu-item index="/inspect/steel/segmentation"><span v-if="isLight" class="nav-dot" />钢铁检测</el-menu-item>
-          <el-menu-item index="/inspect/pcb"><span v-if="isLight" class="nav-dot" />PCB板检测<span v-if="isLight" class="nav-badge">待接入</span></el-menu-item>
+          <el-menu-item index="/inspect/pcb"><span v-if="isLight" class="nav-dot" />PCB板检测</el-menu-item>
           <el-menu-item index="/inspect/solar"><span v-if="isLight" class="nav-dot" />太阳能电池板检测<span v-if="isLight" class="nav-badge">待接入</span></el-menu-item>
         </el-sub-menu>
         <el-menu-item index="/datasets"><el-icon v-if="isLight"><Files /></el-icon>数据集</el-menu-item>

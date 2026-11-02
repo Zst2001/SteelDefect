@@ -1,0 +1,86 @@
+{
+  "scope": "Synthetic trusted CPU HTTP + direct Worker flow; no accuracy/generalization claim; fake queue",
+  "runtime": {
+    "torch": "2.14.0+cpu",
+    "interop": 6
+  },
+  "runs": [
+    {
+      "model_id": "unet",
+      "status": "success",
+      "elapsed_seconds": 4.127612299998873,
+      "cam": {
+        "status": "ok",
+        "layer": "dec1",
+        "target": "原图范围内预测缺陷像素的 defect logit 之和，区域 detach"
+      },
+      "has_gt": false,
+      "metric_available": false,
+      "artifact_kinds": [
+        "origin",
+        "pred_mask",
+        "mask_visual",
+        "overlay",
+        "boundary",
+        "probability",
+        "cam",
+        "pcb_result"
+      ],
+      "foreground_pixels": 23819,
+      "download_ok": true,
+      "history_ok": true
+    },
+    {
+      "model_id": "unet_resnet18",
+      "status": "success",
+      "elapsed_seconds": 3.872948500000348,
+      "cam": {
+        "status": "ok",
+        "layer": "dec0",
+        "target": "原图范围内预测缺陷像素的 defect logit 之和，区域 detach"
+      },
+      "has_gt": false,
+      "metric_available": false,
+      "artifact_kinds": [
+        "origin",
+        "pred_mask",
+        "mask_visual",
+        "overlay",
+        "boundary",
+        "probability",
+        "cam",
+        "pcb_result"
+      ],
+      "foreground_pixels": 29504,
+      "download_ok": true,
+      "history_ok": true
+    },
+    {
+      "model_id": "unetpp_resnet18",
+      "status": "success",
+      "elapsed_seconds": 3.7006540000002133,
+      "cam": {
+        "status": "ok",
+        "layer": "dec0",
+        "target": "原图范围内预测缺陷像素的 defect logit 之和，区域 detach"
+      },
+      "has_gt": true,
+      "metric_available": true,
+      "artifact_kinds": [
+        "origin",
+        "pred_mask",
+        "mask_visual",
+        "overlay",
+        "boundary",
+        "probability",
+        "cam",
+        "gt",
+        "error",
+        "pcb_result"
+      ],
+      "foreground_pixels": 43065,
+      "download_ok": true,
+      "history_ok": true
+    }
+  ]
+}
