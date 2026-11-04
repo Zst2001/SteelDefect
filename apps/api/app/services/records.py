@@ -280,7 +280,7 @@ def rerun_record(db: Session, user: User, task_id: str) -> Task:
         if student_id or len(versions) != 1 or versions[0] is None:
             raise AppError("PCB 任务模型不完整或角色不匹配", code="MODEL_ROLE_INVALID", stage="protocol", status_code=400)
         return create_pcb_task(db, user, batch_id=source.dataset_version_id,
-                               model_id=versions[0].slug, include_cam=task_include_cam(db, source))
+                               model_id=versions[0].slug, include_cam=task_include_cam(db, source), _allow_extended=True)
     if source.type == "classification":
         from app.services.classification import create_classification_task
         versions = [db.get(ModelVersion, vid) for vid in baselines]

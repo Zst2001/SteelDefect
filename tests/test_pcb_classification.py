@@ -1,4 +1,5 @@
 """Offline isolated API/permissions/publication tests, synthetic outputs only."""
+import hashlib
 import io
 import sys
 from types import SimpleNamespace
@@ -15,6 +16,7 @@ from app.db.models import Artifact, DatasetVersion, MetricSet, PreprocessSpecRow
 from app.errors import AppError
 from app.routers import pcb_classification as router
 from app.services import pcb_classification as service
+from app.services.pcb_classification_uploads import MAX_UPLOAD_BYTES, SUPPORTED_FORMATS, prepare_upload
 from app.services.dispatch import Delivery
 from app.services.records import rerun_record, submit_to_advisor, withdraw_from_advisor
 from app.services.storage import resolve_uri
@@ -100,12 +102,11 @@ def test_roi_complete_permissions_and_history(roi, slug):
 
 
 @pytest.mark.parametrize("name,content,mime", [
-    ("roi.png", b"", "image/png"), ("roi.png", b"x" * (2 * 1024 * 1024 + 1), "image/png"),
-    ("roi.png", b"broken", "image/png"), ("roi.png", image(), "image/jpeg"),
-    ("roi.jpg", image(), "image/jpeg"), ("../roi.png", image(), "image/png"),
+    ("roi.png", b"", "image/png"), ("roi.png", b"x" * (MAX_UPLOAD_BYTES + 1), "image/png"),
+    ("roi.png", b"broken", "image/png"), ("../roi.png", image(), "image/png"),
     ("C:\\roi.png", image(), "image/png"), ("roi.png", image("I;16"), "image/png"),
     ("roi.png", image(size=(4097,4096)), "image/png"),
-], ids=["empty","oversize-bytes","corrupt","mime","extension","traversal","absolute-path","16bit","oversize-pixels"])
+], ids=["empty","oversize-bytes","corrupt","traversal","absolute-path","16bit","oversize-pixels"])
 def test_invalid_inputs_do_not_persist(roi, name, content, mime):
     lab = roi.lab
     before = lab.db.query(DatasetVersion).count()
@@ -133,6 +134,155 @@ def test_exif_and_animation():
     with pytest.raises(ValueError): decode(stream.getvalue(),"roi.png","image/png")
 
 
+@pytest.mark.parametrize("name,mime", [("roi.jpg", "image/jpeg"), ("roi.png", "image/jpeg"), ("roi", None)])
+def test_frozen_decoder_stays_strict(name, mime):
+    with pytest.raises(ValueError):
+        decode(image(), name, mime)
+
+
+@pytest.mark.parametrize("name,mime", [("roi.jpg", "image/jpeg"), ("roi.png", "application/octet-stream"),
+                                      ("roi", None), ("roi.PNG", ""), ("roi.bmp", "image/bmp")])
+def test_upload_content_detection_preserves_native_bytes(roi, name, mime):
+    lab = roi.lab
+    original = image()
+    batch = service.create_batch(lab.db, lab.owner, name, original, mime, lab.settings)
+    sample = lab.db.query(Sample).filter_by(version_id=batch["batch_id"]).one()
+    assert resolve_uri(sample.origin_uri, lab.settings).read_bytes() == original
+    assert batch["input_adapted"] is False and batch["source_image"]["normalized"] is False
+    assert batch["source_image"]["sha256"] == hashlib.sha256(original).hexdigest()
+    assert batch["source_image"]["filename"] == name
+    assert sample.origin_uri.endswith("/image.png")
+
+
+@pytest.mark.parametrize("fmt,mode", [("WEBP", "RGB"), ("BMP", "RGB"), ("TIFF", "L"),
+                                      ("GIF", "P"), ("PNG", "1"), ("PNG", "LA")])
+def test_new_formats_run_through_existing_worker_contract(roi, fmt, mode):
+    lab = roi.lab
+    original = image(mode, (120, 80), fmt)
+    batch = service.create_batch(lab.db, lab.owner, "roi." + fmt.lower(), original, "application/octet-stream", lab.settings)
+    assert batch["source_image"]["format"] == fmt
+    assert batch["source_image"]["normalized"] is True
+    assert (batch["source_image"]["width"], batch["source_image"]["height"]) == (120, 80)
+    sample = lab.db.query(Sample).filter_by(version_id=batch["batch_id"]).one()
+    stored = resolve_uri(sample.origin_uri, lab.settings).read_bytes()
+    assert hashlib.sha256(stored).hexdigest() == sample.sha256
+    assert sample.sha256 != batch["source_image"]["sha256"]
+    gray, facts = decode(stored, "image.png")
+    with Image.open(io.BytesIO(original)) as decoded:
+        expected = decoded.convert("L").resize((224, 224), Image.Resampling.BILINEAR)
+    assert np.array_equal(np.asarray(gray), np.asarray(expected))
+    assert facts["input_adapted"] is True
+    task = service.create_task(lab.db, lab.owner, batch_id=batch["batch_id"], model_id="efficientnet_b0", settings=lab.settings)
+    jobs.run_pcb_classification(task.id)
+    lab.db.expire_all()
+    with client(lab, lab.owner) as http:
+        data = http.get(f"/api/tasks/{task.id}").json()
+    assert data["status"] == "success"
+    assert data["source_image"] == batch["source_image"]
+    assert data["result"]["input_adapted"] is True
+    assert data["result"]["sample_sha256"] == sample.sha256
+    assert data["metrics"] == {"available": False}
+
+
+def test_exif_upload_orientation_and_pixels():
+    pixels = np.arange(120 * 80, dtype=np.uint8).reshape(80, 120)
+    source = Image.fromarray(pixels)
+    exif = Image.Exif(); exif[274] = 6
+    stream = io.BytesIO(); source.save(stream, format="PNG", exif=exif)
+    frozen, facts, meta = prepare_upload(stream.getvalue(), "camera.png")
+    gray, _ = decode(frozen, "image.png")
+    expected = source.transpose(Image.Transpose.ROTATE_270).resize((224, 224), Image.Resampling.BILINEAR)
+    assert np.array_equal(np.asarray(gray), np.asarray(expected))
+    assert meta["orientation_applied"] and meta["normalized"] and facts["input_adapted"]
+
+
+def test_upload_larger_than_old_limit_is_normalized():
+    pixels = np.random.default_rng(12).integers(0, 256, (1024, 1024, 3), dtype=np.uint8)
+    stream = io.BytesIO(); Image.fromarray(pixels).save(stream, format="PNG")
+    assert 2 * 1024 * 1024 < len(stream.getvalue()) < MAX_UPLOAD_BYTES
+    frozen, facts, meta = prepare_upload(stream.getvalue(), "large.png")
+    assert len(frozen) < 2 * 1024 * 1024
+    assert meta["normalized"] and facts["input_adapted"]
+    gray, _ = decode(frozen, "image.png")
+    expected = Image.fromarray(pixels).convert("L").resize((224, 224), Image.Resampling.BILINEAR)
+    assert np.array_equal(np.asarray(gray), np.asarray(expected))
+
+
+@pytest.mark.parametrize("fmt,mode", [("GIF", "RGB"), ("TIFF", "RGB"), ("PNG", "L")])
+def test_animation_and_multiframe_uploads_rejected(roi, fmt, mode):
+    stream = io.BytesIO()
+    Image.new(mode, (20, 20), 0).save(stream, format=fmt, save_all=True,
+        append_images=[Image.new(mode, (20, 20), 255)])
+    before = roi.lab.db.query(DatasetVersion).count()
+    with pytest.raises(AppError, match="动画或多页"):
+        service.create_batch(roi.lab.db, roi.lab.owner, "animated." + fmt.lower(), stream.getvalue(), None, roi.lab.settings)
+    assert roi.lab.db.query(DatasetVersion).count() == before
+    roi.queue.assert_not_called()
+
+
+def test_source_provenance_and_two_models_share_one_upload(roi):
+    lab = roi.lab
+    original = image("RGB", (100, 160), "BMP")
+    batch = service.create_batch(lab.db, lab.owner, "source.bmp", original, None, lab.settings)
+    tasks = [service.create_task(lab.db, lab.owner, batch_id=batch["batch_id"], model_id=slug,
+        idempotency_key="multi-" + slug, settings=lab.settings) for slug in MODELS]
+    assert len({task.id for task in tasks}) == 2
+    assert len({task.dataset_version_id for task in tasks}) == 1
+    assert lab.db.query(Sample).filter_by(version_id=batch["batch_id"]).count() == 1
+    for task, slug in zip(tasks, MODELS):
+        assert service.create_task(lab.db, lab.owner, batch_id=batch["batch_id"], model_id=slug,
+            idempotency_key="multi-" + slug, settings=lab.settings).id == task.id
+        jobs.run_pcb_classification(task.id)
+    assert roi.queue.call_count == 2
+    lab.db.expire_all()
+    assert all(lab.db.get(Task, task.id).status == "success" for task in tasks)
+
+
+def test_old_metadata_without_source_image_still_runs(roi):
+    lab = roi.lab
+    batch = service.create_batch(lab.db, lab.owner, "old.png", image(), "image/png", lab.settings)
+    version = lab.db.get(DatasetVersion, batch["batch_id"])
+    version.class_map_json = {key: value for key, value in version.class_map_json.items() if key != "source_image"}
+    lab.db.commit()
+    task = service.create_task(lab.db, lab.owner, batch_id=batch["batch_id"], model_id="efficientnet_b0", settings=lab.settings)
+    jobs.run_pcb_classification(task.id)
+    lab.db.expire_all()
+    data = service.serialize_task(lab.db, lab.db.get(Task, task.id), lab.settings)
+    assert data["status"] == "success" and data["source_image"] is None
+    assert data["input"]["input_adapted"] is False
+
+
+def test_upload_endpoint_expanded_formats_and_catalog(roi, monkeypatch):
+    lab = roi.lab
+    monkeypatch.setattr(service, "catalog", lambda _: [{"model_id": slug, "available": True} for slug in MODELS])
+    catalog = service.catalog_payload(lab.settings)
+    assert catalog["supported_formats"] == list(SUPPORTED_FORMATS)
+    assert catalog["max_image_bytes"] == MAX_UPLOAD_BYTES and catalog["max_pixels"] == 4096 ** 2
+    with client(lab, lab.owner) as http:
+        http.app.include_router(router.router, prefix="/api")
+        response = http.post("/api/scenes/pcb/classification/uploads", files={"file": ("capture", image("RGB", (300, 200), "BMP"), "application/octet-stream")})
+    assert response.status_code == 200
+    assert response.json()["source_image"]["format"] == "BMP"
+
+
+def test_upload_route_limit_and_safe_filename_errors(roi):
+    lab = roi.lab
+    pixels = np.random.default_rng(27).integers(0, 256, (1024, 1024, 3), dtype=np.uint8)
+    stream = io.BytesIO(); Image.fromarray(pixels).save(stream, format="PNG")
+    with client(lab, lab.owner) as http:
+        http.app.include_router(router.router, prefix="/api")
+        response = http.post("/api/scenes/pcb/classification/uploads", files={"file": ("large.png", stream.getvalue(), "image/png")})
+        assert response.status_code == 200 and response.json()["source_image"]["bytes"] > 2 * 1024 * 1024
+        assert response.json()["source_image"]["normalized"] is True
+        before = lab.db.query(DatasetVersion).count()
+        for name, content in (("../roi.png", image()), ("C:/folder/roi.png", image()), ("roi.svg", b"<svg></svg>"),
+                              ("oversized.png", b"x" * (MAX_UPLOAD_BYTES + 1))):
+            result = http.post("/api/scenes/pcb/classification/uploads", files={"file": (name, content, "image/png")})
+            assert result.status_code == 400 and result.json()["code"] == "PCB_CLS_BAD_IMAGE", name
+        assert lab.db.query(DatasetVersion).count() == before
+        roi.queue.assert_not_called()
+
+
 def test_upload_contract_unknown_fields_and_ids(roi):
     lab=roi.lab
     with client(lab,lab.owner) as http:
@@ -153,7 +303,7 @@ def test_upload_contract_unknown_fields_and_ids(roi):
 
 
 @pytest.mark.parametrize("when", ["queued","publishing"])
-@pytest.mark.parametrize("change", ["actor","flag","bytes","metadata","weight","admission"])
+@pytest.mark.parametrize("change", ["actor","flag","bytes","metadata","source","weight","admission"])
 def test_revocation_prevents_outputs(roi, monkeypatch, when, change):
     lab=roi.lab
     batch,task=create(roi)
@@ -165,6 +315,8 @@ def test_revocation_prevents_outputs(roi, monkeypatch, when, change):
             resolve_uri(row.origin_uri,lab.settings).write_bytes(b"changed")
         elif change=="metadata":
             row=lab.db.get(DatasetVersion,batch["batch_id"]);row.class_map_json={**row.class_map_json,"filename":"changed.png"}
+        elif change=="source":
+            row=lab.db.get(DatasetVersion,batch["batch_id"]);row.class_map_json={**row.class_map_json,"source_image":{**row.class_map_json["source_image"],"sha256":"d"*64}}
         elif change=="weight":
             mid=lab.db.query(TaskModel).filter_by(task_id=task.id).one().model_version_id
             lab.db.query(Weight).filter_by(version_id=mid).one().sha256="a"*64

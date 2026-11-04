@@ -6,7 +6,8 @@ from app.authz import get_current_user
 from app.db.models import User
 from app.deps import get_db
 from app.errors import AppError
-from app.services.pcb_classification import MAX_BYTES, catalog_payload, create_batch, create_task, serialize_task
+from app.services.pcb_classification import catalog_payload, create_batch, create_task, serialize_task
+from app.services.pcb_classification_uploads import MAX_UPLOAD_BYTES
 
 router = APIRouter(prefix="/scenes/pcb/classification", tags=["pcb-classification"])
 
@@ -29,7 +30,7 @@ async def upload(request: Request, file: UploadFile = File(...), db: Session = D
         form = await request.form()
         if set(form) != {"file"} or len(form.getlist("file")) != 1:
             raise AppError("仅支持一张已裁剪 ROI，不接受 GT、脚本或批量输入", code="PCB_CLS_IMAGE_COUNT", stage="file", status_code=400)
-        return create_batch(db, user, file.filename or "", await file.read(MAX_BYTES + 1), file.content_type)
+        return create_batch(db, user, file.filename or "", await file.read(MAX_UPLOAD_BYTES + 1), file.content_type)
     finally:
         await file.close()
 

@@ -322,7 +322,11 @@ onUnmounted(() => {
 .sample-nav { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .sample-select { width: 160px; }
 .sample-counter { color: #8391a8; font-size: 15px; white-space: nowrap; }
-.sample-nav .el-button { width: 32px; padding: 0; margin-left: 0; border-color: #edf1f7; background: #f6f9fd; }
+.sample-nav .el-button { width: 34px; padding: 0; margin-left: 0; color: #294e78; border-color: #bdcde0; background: #f4f8fd; }
+.sample-nav .el-button :deep(.el-icon) { font-size: 18px; }
+.sample-nav .el-button:not(.is-disabled):hover { color: #173a63; border-color: #7a9ec9; background: #e5effc; }
+.sample-nav .el-button:focus-visible { outline: 2px solid #417cbf; outline-offset: 2px; }
+.sample-nav .el-button.is-disabled { color: #7386a0; border-color: #d7e0eb; background: #f4f6f9; opacity: 1; }
 .viewer-body { padding: 19px 20px 16px; }
 .image-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; color: #405572; font-size: 15px; margin-bottom: 12px; }
 .image-heading > span:first-child { display: flex; align-items: center; gap: 7px; font-weight: 600; }

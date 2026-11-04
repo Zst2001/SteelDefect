@@ -1,4 +1,5 @@
-// Isolated PCB UI acceptance: synthetic images and mocked API; no model or production service.
+// Legacy single-task detail/history compatibility acceptance. Batch upload/selection now lives in check_pcb_batch_frontend.mjs.
+// Synthetic images and mocked API only; no model or production service.
 // node tests/check_pcb_frontend.mjs <absolute Playwright package directory> [output directory]
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
@@ -16,7 +17,7 @@ const scratch = await fs.mkdtemp(path.join(os.tmpdir(), 'steel-pcb-ui-'));
 const output = path.resolve(process.argv[3] || 'docs/report/pcb-stage4-closeout-20261030/frontend');
 await fs.mkdir(output, { recursive: true });
 const server = await createServer({ root:path.join(root,'apps/web'), configFile:false, envFile:false, envDir:scratch,
-  cacheDir:path.join(scratch,'cache'), plugins:[vue()], server:{host:'127.0.0.1',port:5201,strictPort:true,proxy:{}},logLevel:'error' });
+  cacheDir:path.join(scratch,'cache'), plugins:[vue()], server:{host:'127.0.0.1',port:0,proxy:{}},logLevel:'error' });
 function png(width=220,height=220,gray=false,foreground=1) {
   const crc = data => { let c=0xffffffff; for(const b of data) { c^=b; for(let i=0;i<8;i++) c=(c>>>1)^((c&1)?0xedb88320:0); } return (c^0xffffffff)>>>0; };
   const chunk = (type,data) => { const body=Buffer.concat([Buffer.from(type),data]), length=Buffer.alloc(4),check=Buffer.alloc(4); length.writeUInt32BE(data.length);check.writeUInt32BE(crc(body));return Buffer.concat([length,body,check]); };
@@ -44,11 +45,11 @@ let browser, releaseCatalog, checks=0, mode='ready', uploadFailure=false, submit
 const calls=[], unexpected=[], errors=[];
 const check=(condition,message)=>{ assert.ok(condition,message);checks++;console.log(`PASS ${message}`); };
 try {
-  await server.listen();browser=await chromium.launch({headless:true});
+  await server.listen();const origin='http://127.0.0.1:'+server.httpServer.address().port;browser=await chromium.launch({headless:true});
   const context=await browser.newContext({viewport:{width:1440,height:1000},reducedMotion:'reduce'});
   await context.route('**/*',async route=>{
     const request=route.request(),url=new URL(request.url()),key=url.pathname,method=request.method();
-    if(url.hostname!=='127.0.0.1'||url.port!=='5201')return route.abort();
+    if(url.origin!==origin)return route.abort();
     if(!key.startsWith('/api/'))return route.continue();
     calls.push({key,method,body:request.postData(),idempotency:request.headers()['idempotency-key']});
     const json=data=>route.fulfill({json:data});
@@ -75,56 +76,20 @@ try {
     unexpected.push(`${method} ${key}`);return fail(500,'Unmocked request blocked');
   });
   const page=await context.newPage();page.setDefaultTimeout(10000);page.on('pageerror',err=>errors.push(err.message));
-  const go=async target=>{await page.goto(`http://127.0.0.1:5201${target}`,{timeout:45000});await page.waitForLoadState('networkidle');};
+  const go=async target=>{await page.goto(`${origin}${target}`,{timeout:45000});await page.waitForLoadState('networkidle');};
   const navigate=async target=>page.evaluate(async dest=>{const{default:router}=await import('/src/router/index.ts');await router.push(dest);},target);
   const capture=async name=>{await page.evaluate(()=>{window.scrollTo(0,0);const el=document.createElement('div');el.id='test-note';el.textContent='界面验收 · 合成图像与模拟 API · 非模型测试成绩';el.style.cssText='position:fixed;bottom:0;right:0;background:#173450;color:#fff;padding:6px 12px;font:12px sans-serif;z-index:99999';document.body.append(el);});await page.screenshot({path:path.join(output,`${name}.png`),fullPage:true});await page.locator('#test-note').evaluate(el=>el.remove());};
   const noCancel=async label=>{check(await page.getByRole('button',{name:/取消任务|中止任务|终止任务|停止任务|cancel task/i}).count()===0,`no unsupported cancel button: ${label}`);check(await page.getByRole('link',{name:/取消任务|中止任务|终止任务|停止任务|cancel task/i}).count()===0,`no unsupported cancel link: ${label}`);check(await page.locator('.task-status').filter({hasText:/已取消|取消中|canceled|canceling|cancelled|cancelling/i}).count()===0,`no fabricated cancel status: ${label}`);};
   const maskDownload=async(id,kind)=>{const event=page.waitForEvent('download');await page.getByRole('button',{name:'下载当前图层',exact:true}).click();const download=await event;check(download.suggestedFilename()===`${id}_${kind}.png`,`${id} ${kind} filename matches mask semantics`);const bytes=await fs.readFile(await download.path());check(bytes.subarray(0,8).equals(Buffer.from([137,80,78,71,13,10,26,10])),`${id} ${kind} download is PNG`);await fs.writeFile(path.join(output,download.suggestedFilename()),bytes);return page.evaluate(async data=>{const image=new Image();image.src=`data:image/png;base64,${data}`;await image.decode();const canvas=document.createElement('canvas');canvas.width=image.naturalWidth;canvas.height=image.naturalHeight;const ctx=canvas.getContext('2d');ctx.drawImage(image,0,0);const rgba=ctx.getImageData(0,0,canvas.width,canvas.height).data;return {width:canvas.width,height:canvas.height,pixels:Array.from({length:rgba.length/4},(_,i)=>rgba[i*4])};},bytes.toString('base64'));};
-  mode='loading';await page.goto('http://127.0.0.1:5201/inspect/pcb',{waitUntil:'domcontentloaded',timeout:45000});await page.getByRole('status').filter({hasText:'正在检查 PCB'}).waitFor();check(await page.getByRole('status').isVisible(),'catalog loading state visible');await page.waitForFunction(()=>document.querySelector('.pcb-new'));while(!releaseCatalog)await page.waitForTimeout(20);mode='ready';releaseCatalog();await page.getByRole('radio').first().waitFor();
-  check(await page.getByRole('heading',{name:'PCB 表面缺陷分割工作台',exact:true}).count()===1,'PCB workbench is independent');
-  check(await page.getByRole('radio').count()===3,'only three reviewed PCB models');
-  check(await page.getByRole('radio',{name:/^U-Net /}).isChecked(),'U-Net is default candidate');
-  check(await page.getByRole('button',{name:'开始 PCB 分割',exact:true}).isDisabled(),'empty input cannot submit');
-  await capture('01-workbench-empty');
-  await page.getByLabel('PCB 原图',{exact:true}).setInputFiles(upload('wrong.png',221));
-  await page.getByRole('alert').waitFor();check((await page.getByRole('alert').innerText()).includes('220 × 220'),'wrong dimensions rejected');
-  await page.getByLabel('PCB 原图',{exact:true}).setInputFiles(upload('gray.png',220,220,true));
-  check((await page.getByRole('alert').innerText()).includes('8 位 RGB'),'non RGB PNG rejected');
-  await page.getByLabel('PCB 原图',{exact:true}).setInputFiles({name:'fake.jpg',mimeType:'image/jpeg',buffer:Buffer.from('not an image')});
-  check((await page.getByRole('alert').innerText()).includes('有效 JPEG'),'forged JPEG rejected');
-  await page.getByLabel('PCB 原图',{exact:true}).setInputFiles({name:'empty.png',mimeType:'image/png',buffer:Buffer.alloc(0)});
-  check((await page.getByRole('alert').innerText()).includes('非空'),'empty file rejected');
-  await page.getByLabel('PCB 原图',{exact:true}).setInputFiles({name:'large.png',mimeType:'image/png',buffer:Buffer.alloc(2097153)});
-  check((await page.getByRole('alert').innerText()).includes('2 MiB'),'oversize file rejected before upload');
-  await page.getByLabel('PCB 原图',{exact:true}).setInputFiles(upload());
-  await page.getByRole('img',{name:'待分割 PCB 原图',exact:true}).waitFor();
-  check(await page.getByRole('button',{name:'开始 PCB 分割',exact:true}).isEnabled(),'valid image enables no GT segmentation');
-  await page.getByRole('button',{name:'移除原图',exact:true}).click();
-  check(await page.getByRole('button',{name:'开始 PCB 分割',exact:true}).isDisabled(),'clear original removes submission readiness');
-  await page.getByLabel('PCB 原图',{exact:true}).setInputFiles(upload());await page.getByRole('img',{name:'待分割 PCB 原图',exact:true}).waitFor();
-  await page.locator('summary').filter({hasText:'高级选项'}).click();await page.getByRole('checkbox',{name:'添加配对 GT',exact:true}).focus();await page.keyboard.press('Space');
-  check(await page.getByRole('button',{name:'开始 PCB 分割',exact:true}).isDisabled(),'GT option requires paired file');
-  await page.getByLabel('PCB 配对 GT',{exact:true}).setInputFiles(upload('gt.png',220,220,true));await page.getByRole('img',{name:'配对 GT 预览',exact:true}).waitFor();
-  await page.getByRole('checkbox',{name:'生成 Grad-CAM',exact:true}).focus();await page.keyboard.press('Space');
-  await page.getByRole('radio',{name:/ResNet18-U-Net\+\+/}).check();
-  check(await page.getByRole('radio',{name:/ResNet18-U-Net\+\+/}).isChecked(),'model choice is single selection');
-  uploadFailure=true;await page.getByRole('button',{name:'开始 PCB 分割',exact:true}).click();await page.getByRole('alert').filter({hasText:'非法像素值'}).waitFor();
-  check(calls.filter(c=>c.key==='/api/scenes/pcb/segmentation/tasks').length===0,'server rejects invalid GT before task submission');
-  uploadFailure=false;submitFailure=true;await page.getByRole('button',{name:'开始 PCB 分割',exact:true}).click();await page.getByRole('alert').filter({hasText:'服务暂不可用'}).waitFor();
-  const uploadCount=calls.filter(c=>c.key==='/api/scenes/pcb/segmentation/uploads').length,firstSubmit=calls.filter(c=>c.key==='/api/scenes/pcb/segmentation/tasks').at(-1);
-  check(!!firstSubmit.idempotency,'PCB request includes idempotency key');
-  submitFailure=false;await page.getByRole('button',{name:'开始 PCB 分割',exact:true}).click();await page.waitForURL('**/inspect/pcb/tasks/created');await page.locator('.pcb-metrics').waitFor();
-  check(calls.filter(c=>c.key==='/api/scenes/pcb/segmentation/uploads').length===uploadCount,'queue retry reuses uploaded batch');
-  check(calls.filter(c=>c.key==='/api/scenes/pcb/segmentation/tasks').at(-1).idempotency===firstSubmit.idempotency,'network/503 retry preserves idempotency');
-  check(lastModel==='unetpp_resnet18'&&lastCam&&lastGT,'selected model, GT and CAM reach backend');
-  check(polls>=2,'queued task polls to successful result');
+  lastGT=true;lastCam=true;lastModel='unetpp_resnet18';polls=0;
+  await go('/inspect/pcb/tasks/created');await page.locator('.pcb-metrics').waitFor();
+  check(polls>=2,'legacy queued task polls to successful result');
   check(await page.locator('.el-menu-item.is-active').innerText()==='PCB板检测','result keeps PCB navigation active');
   await page.getByRole('button',{name:'缺陷概率',exact:true}).click();check(await page.locator('.pcb-probability-scale').isVisible(),'probability has distinct scale');
   await page.getByRole('button',{name:'Grad-CAM',exact:true}).click();check((await page.locator('.layer-description').innerText()).includes('不表示缺陷概率'),'CAM distinguished from probability');
   await page.getByRole('button',{name:'放大查看',exact:true}).click();check(await page.getByRole('dialog').isVisible(),'layer can be enlarged');await page.keyboard.press('Escape');
   const layerDownload=page.waitForEvent('download');await page.getByRole('button',{name:'下载当前图层',exact:true}).click();check((await layerDownload).suggestedFilename()==='created_cam.png','authorized layer download');
   await capture('02-result-with-gt');
-  for(const model of models) {await go('/inspect/pcb');await page.getByLabel('PCB 原图',{exact:true}).setInputFiles(upload());await page.getByRole('img',{name:'待分割 PCB 原图',exact:true}).waitFor();await page.locator(`input[type=radio][value="${model.slug}"]`).check();await page.getByRole('button',{name:'开始 PCB 分割',exact:true}).click();await page.waitForURL('**/inspect/pcb/tasks/created');check(lastModel===model.slug,`${model.slug} submitted independently`);}
   await go('/inspect/pcb/tasks/no-gt');
   check(await page.locator('.pcb-metrics').count()===0,'no GT has no numeric metrics');
   check((await page.locator('.pcb-no-metrics').innerText()).includes('无法计算真实性能指标'),'no GT reason explicit');
@@ -149,12 +114,9 @@ try {
   await go('/inspect/pcb/tasks/wrong-scene');check((await page.getByRole('alert').innerText()).includes('不是 PCB 分割任务'),'cross scene task is refused');
   detailFailure=true;await go('/inspect/pcb/tasks/no-gt');check(await page.getByRole('button',{name:'重新加载',exact:true}).isVisible(),'detail error provides retry');detailFailure=false;await page.getByRole('button',{name:'重新加载',exact:true}).click();await page.locator('.pcb-result-panel').waitFor();
   await go('/inspect/pcb/tasks/waiting');await navigate('/inspect/pcb');await page.locator('.pcb-new').waitFor();const count=calls.filter(c=>c.key==='/api/tasks/waiting').length;await page.waitForTimeout(2800);check(calls.filter(c=>c.key==='/api/tasks/waiting').length===count,'leaving detail stops polling');
-  mode='disabled';await go('/inspect/pcb');check((await page.getByRole('status').innerText()).includes('暂未启用'),'disabled feature has explicit state');check(await page.getByLabel('PCB 原图',{exact:true}).isDisabled(),'disabled feature cannot upload');
-  mode='missing';await go('/inspect/pcb');check(await page.getByRole('button',{name:'开始 PCB 分割',exact:true}).isDisabled(),'one missing model keeps whole scene disabled');
-  mode='error';await go('/inspect/pcb');check((await page.getByRole('alert').innerText()).includes('目录暂不可用'),'catalog error distinct from disabled');mode='ready';await page.getByRole('button',{name:'重新加载目录',exact:true}).click();await page.getByRole('radio').first().waitFor();
   await go('/records?type=pcb_segmentation');check(calls.filter(c=>c.key==='/api/records').length>0,'PCB history uses existing records');check(await page.getByText('PCB 表面分割',{exact:true}).count()>0,'PCB history has explicit task label');await page.getByRole('link',{name:'查看',exact:true}).click();await page.waitForURL('**/inspect/pcb/tasks/no-gt');
-  for(const width of [1440,768,390]) {await page.setViewportSize({width,height:1000});for(const target of ['/inspect/pcb','/inspect/pcb/tasks/no-gt','/inspect/pcb/tasks/with-gt','/inspect/pcb/tasks/legacy','/inspect/pcb/tasks/queued','/inspect/pcb/tasks/waiting','/records?type=pcb_segmentation']) {await go(target);check(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),`no overflow ${width}px ${target}`);if(target==='/inspect/pcb'){await page.getByLabel('PCB 原图',{exact:true}).setInputFiles(upload());await page.getByRole('img',{name:'待分割 PCB 原图',exact:true}).waitFor();}if(target.startsWith('/inspect/pcb'))check((await page.locator('.pcb-cancel-notice').innerText()).includes('任务取消本期延期，当前不支持主动中止已提交任务'),`cancellation deferral visible ${width}px ${target}`);if(target.startsWith('/records')){await page.getByRole('button',{name:'更多记录操作',exact:true}).click();await page.getByRole('menuitem',{name:'备注',exact:true}).waitFor();check(await page.getByRole('menuitem',{name:/取消任务|中止任务|终止任务|停止任务/}).count()===0,`history dropdown has no cancel action ${width}px`);}await noCancel(`${width}px ${target}`);await capture(`${width}-${target.split('/').filter(Boolean).join('-').replaceAll('?','-').replaceAll('=','-')}`);}}
+  for(const width of [1440,768,390]) {await page.setViewportSize({width,height:1000});for(const target of ['/inspect/pcb/tasks/no-gt','/inspect/pcb/tasks/with-gt','/inspect/pcb/tasks/legacy','/inspect/pcb/tasks/queued','/inspect/pcb/tasks/waiting','/records?type=pcb_segmentation']) {await go(target);check(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),`no overflow ${width}px ${target}`);if(target.startsWith('/inspect/pcb'))check((await page.locator('.pcb-cancel-notice').innerText()).includes('任务取消本期延期，当前不支持主动中止已提交任务'),`cancellation deferral visible ${width}px ${target}`);if(target.startsWith('/records')){await page.getByRole('button',{name:'更多记录操作',exact:true}).click();await page.getByRole('menuitem',{name:'备注',exact:true}).waitFor();check(await page.getByRole('menuitem',{name:/取消任务|中止任务|终止任务|停止任务/}).count()===0,`history dropdown has no cancel action ${width}px`);}await noCancel(`${width}px ${target}`);await capture(`${width}-${target.split('/').filter(Boolean).join('-').replaceAll('?','-').replaceAll('=','-')}`);}}
   check(calls.every(call=>!/(?:cancel|abort|terminate)/i.test(call.key)),'UI never calls an unsupported cancel endpoint');
   check(unexpected.length===0,`no unmocked endpoints: ${unexpected.join(',')}`);check(errors.length===0,`no browser exceptions: ${errors.join(',')}`);
-  await fs.writeFile(path.join(output,'results.json'),JSON.stringify({checks,browser:browser.version(),apiRequests:calls.length,unexpected,errors,environment:'All business API mocked; synthetic images; no production data or inference'},null,2));console.log(`PASS ${checks} PCB UI assertions.`);
-} finally {if(browser)await browser.close();await server.close();}
+  await fs.writeFile(path.join(output,'results.json'),JSON.stringify({checks,browser:browser.version(),apiRequests:calls.length,unexpected,errors,environment:'All business API mocked; synthetic images; no production data or inference'},null,2));console.log(`PASS ${checks} legacy PCB detail/history UI assertions.`);
+} finally {if(browser)await browser.close();await server.close();const resolved=await fs.realpath(scratch);assert(path.dirname(resolved)===await fs.realpath(os.tmpdir())&&path.basename(resolved).startsWith('steel-pcb-ui-'));await fs.rm(resolved,{recursive:true});}

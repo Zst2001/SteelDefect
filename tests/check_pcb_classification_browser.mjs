@@ -42,12 +42,13 @@ try {
   };
   for(const [i,key] of ['efficientnet_b0','mobilenet_v3_small','mobilenet_v3_small'].entries()){
     await go('/inspect/pcb/classification');
-    check(await page.locator('#roi-model').inputValue()==='efficientnet_b0','backend default EfficientNet '+i);
-    check(await page.locator('#roi-model option').count()===2,'two admitted models '+i);
+    check(await page.locator('.roi-model-card input[value="efficientnet_b0"]').isChecked(),'backend default EfficientNet '+i);
+    check(await page.locator('.roi-model-card').count()===2,'two admitted model cards '+i);
     check(await page.locator('.roi-classes>span').count()===6,'six fixed classes '+i);
     await page.getByLabel('PCB 分类 ROI',{exact:true}).setInputFiles({name:i===1?'roi.jpg':'roi.png',mimeType:i===1?'image/jpeg':'image/png',buffer:Buffer.from(i===1?cfg.jpeg:cfg.png,'base64')});
     await page.getByRole('img',{name:'待分类 ROI 预览',exact:true}).waitFor();
-    await page.locator('#roi-model').selectOption(key);
+    await page.getByRole('button',{name:'取消全选',exact:true}).click();
+    await page.locator(`.roi-model-card input[value="${key}"]`).check();
     if(i===0)await shot('desktop-upload');
     const created=page.waitForResponse(r=>new URL(r.url()).pathname==='/api/scenes/pcb/classification/tasks'&&r.request().method()==='POST');
     await page.getByRole('button',{name:'开始 PCB 分类',exact:true}).click();

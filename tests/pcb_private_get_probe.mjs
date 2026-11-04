@@ -14,6 +14,8 @@ export const privatePaths = [
   ...['source/trusted_models.py','source/pcb_preprocess.py','source/pcb_postprocess.py',
     'ASSET_MANIFEST.json','MODEL_REGISTRY.json'].map(p => `assets/pcb/meiwei_v2_formal_v1/${p}`),
   'assets/pcb/meiwei_v2_formal_v1.admission.json',
+  'packages/infer/pcb/tiling.py',
+  'packages/infer/pcb/runtime.py',
 ];
 
 export function boundedRequest(origin, requestPath, method = 'GET') {

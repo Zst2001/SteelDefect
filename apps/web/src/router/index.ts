@@ -18,6 +18,7 @@ const router = createRouter({
         { path: "inspect/steel", redirect: "/inspect/steel/segmentation" },
         { path: "inspect/steel/:task", name: "steel-inspect", component: () => import("../views/inspect/SteelInspectView.vue") },
         { path: "inspect/pcb", name: "pcb-inspect", component: () => import("../views/pcb/PcbNewView.vue") },
+        { path: "inspect/pcb/batches/:batchId", name: "pcb-batch", component: () => import("../views/pcb/PcbBatchView.vue") },
         { path: "inspect/pcb/tasks/:taskId", name: "pcb-task", component: () => import("../views/pcb/PcbTaskView.vue") },
         { path: "inspect/pcb/classification", name: "pcb-classify", component: () => import("../views/pcb/PcbClassifyNewView.vue") },
         { path: "inspect/pcb/classification/tasks/:taskId", name: "pcb-classify-task", component: () => import("../views/pcb/PcbClassifyTaskView.vue") },

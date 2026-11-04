@@ -1,0 +1,71 @@
+{
+  "status": "PASS",
+  "checks": 9,
+  "first": {
+    "prev": {
+      "disabled": true,
+      "color": "rgb(115, 134, 160)",
+      "background": "rgb(244, 246, 249)",
+      "border": "rgb(215, 224, 235)",
+      "opacity": "1",
+      "iconSize": "18px",
+      "iconColor": "rgb(115, 134, 160)",
+      "outline": "none"
+    },
+    "next": {
+      "disabled": false,
+      "color": "rgb(41, 78, 120)",
+      "background": "rgb(244, 248, 253)",
+      "border": "rgb(189, 205, 224)",
+      "opacity": "1",
+      "iconSize": "18px",
+      "iconColor": "rgb(41, 78, 120)",
+      "outline": "none"
+    }
+  },
+  "last": {
+    "prev": {
+      "disabled": false,
+      "color": "rgb(41, 78, 120)",
+      "background": "rgb(244, 248, 253)",
+      "border": "rgb(189, 205, 224)",
+      "opacity": "1",
+      "iconSize": "18px",
+      "iconColor": "rgb(41, 78, 120)",
+      "outline": "none"
+    },
+    "next": {
+      "disabled": true,
+      "color": "rgb(115, 134, 160)",
+      "background": "rgb(244, 246, 249)",
+      "border": "rgb(215, 224, 235)",
+      "opacity": "1",
+      "iconSize": "18px",
+      "iconColor": "rgb(115, 134, 160)",
+      "outline": "none"
+    }
+  },
+  "hover": {
+    "disabled": false,
+    "color": "rgb(23, 58, 99)",
+    "background": "rgb(229, 239, 252)",
+    "border": "rgb(122, 158, 201)",
+    "opacity": "1",
+    "iconSize": "18px",
+    "iconColor": "rgb(23, 58, 99)",
+    "outline": "none"
+  },
+  "focus": {
+    "disabled": false,
+    "color": "rgb(41, 78, 120)",
+    "background": "rgb(244, 248, 253)",
+    "border": "rgb(189, 205, 224)",
+    "opacity": "1",
+    "iconSize": "18px",
+    "iconColor": "rgb(41, 78, 120)",
+    "outline": "solid"
+  },
+  "errors": [],
+  "unexpected": [],
+  "scope": "mock API; actual Vue rendering; no backend/service/inference"
+}

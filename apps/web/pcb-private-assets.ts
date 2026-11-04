@@ -24,7 +24,7 @@ export function pcbPrivateAssets(): Plugin {
         .join("/");
       pathname = posix.normalize(pathname).toLowerCase();
       if (!/(?:^|\/)assets\/(?:pcb|pcb_segment|pcb_fenlei|pcb_classification)(?:\/|$)/.test(pathname)
-          && !/(?:^|\/)packages\/infer\/pcb_classification(?:\/|$)/.test(pathname)) return next();
+          && !/(?:^|\/)packages\/infer\/pcb(?:_classification)?(?:\/|$)/.test(pathname)) return next();
       response.statusCode = 403;
       response.setHeader("Content-Type", "text/plain; charset=utf-8");
       response.setHeader("Cache-Control", "no-store");

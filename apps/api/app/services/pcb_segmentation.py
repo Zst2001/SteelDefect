@@ -65,8 +65,10 @@ def catalog_payload(settings=None):
     from infer.pcb.catalog import catalog
     rows = catalog(asset_root(settings))
     ready = len(rows) == 3 and all(row.get("available") for row in rows)
+    from infer.pcb.tiling import limits
     return {"enabled": enabled(settings), "available": enabled(settings) and ready,
             "models": rows, "default_model": "unet", "max_image_bytes": MAX_IMAGE_BYTES,
+            "limits": {**limits(), "max_total_windows": limits()["max_window_model_budget"]},
             "input": {"width": 220, "height": 220, "mode": "RGB", "formats": ["PNG", "JPEG"]},
             "message": "单张 220×220 RGB 图片；无配对 GT 不计算真实性能指标。"}
 
@@ -217,7 +219,15 @@ def pcb_snapshot(db, task):
             or spec.dataset != "pcb_meiwei_v2" or base.dataset != "pcb_meiwei_v2"):
         raise ValueError("PCB identity changed")
     samples = db.query(Sample).filter_by(version_id=version.id).order_by(Sample.sample_key).populate_existing().with_for_update().all()
-    if len(samples) != 1 or samples[0].sample_key != "image" or (samples[0].width, samples[0].height) != (220, 220) or bool(samples[0].mask_uri) != bool(task.has_gt):
+    meta = version.class_map_json or {}
+    expected_size = (220, 220)
+    if meta.get("batch_extension") == 1:
+        from infer.pcb.tiling import plan, source_hash
+        actual_plan = plan(samples[0].width, samples[0].height, meta["input_plan"]["source_mode"]) if len(samples) == 1 else None
+        if meta.get("extension_hash") != source_hash() or meta.get("input_plan") != actual_plan:
+            raise ValueError("PCB deployment adapter identity changed")
+        expected_size = (actual_plan["width"], actual_plan["height"])
+    if len(samples) != 1 or samples[0].sample_key != "image" or (samples[0].width, samples[0].height) != expected_size or bool(samples[0].mask_uri) != bool(task.has_gt):
         raise ValueError("PCB sample contract changed")
     links = db.query(TaskModel).filter_by(task_id=task.id).populate_existing().with_for_update().all()
     if len(links) != 1:
@@ -239,7 +249,8 @@ def pcb_snapshot(db, task):
             "sample_facts": [{"id": s.id, "sha256": s.sha256, "width": s.width, "height": s.height} for s in samples]}
 
 
-def create_pcb_task(db, user, *, batch_id, model_id, include_cam=False, idempotency_key=None, settings=None):
+def create_pcb_task(db, user, *, batch_id, model_id, include_cam=False, idempotency_key=None, settings=None,
+                    _defer_delivery=False, _allow_extended=False):
     settings = settings or get_settings()
     require_enabled(settings)
     if type(include_cam) is not bool:
@@ -251,6 +262,8 @@ def create_pcb_task(db, user, *, batch_id, model_id, include_cam=False, idempote
         dataset = db.get(Dataset, version.dataset_id) if version else None
         if not version or version.kind != "pcb_batch" or not dataset or dataset.owner_id != user.id:
             raise AppError("PCB 批次不存在或不属于当前用户", code="PCB_BATCH_FORBIDDEN", stage="auth", status_code=404)
+        if (version.class_map_json or {}).get("batch_extension") == 1 and not _allow_extended:
+            raise AppError("扩展图片请通过批量工作台提交", code="PCB_BATCH_ENDPOINT_REQUIRED", stage="protocol", status_code=409)
         if (version.class_map_json or {}).get("protocol_hash") != item["protocol_hash"]:
             raise AppError("PCB 批次协议不一致", code="PCB_PROTOCOL_CHANGED", stage="protocol", status_code=409)
         model = register_model(db, item)
@@ -258,6 +271,8 @@ def create_pcb_task(db, user, *, batch_id, model_id, include_cam=False, idempote
         ident = request_id(TYPE, user.id, idempotency_key)
         previous = existing_task(db, ident, TYPE, version.id, [model.id], None)
         if previous is not None:
+            if _defer_delivery:
+                raise AppError("批次任务身份已被占用", code="IDEMPOTENCY_CONFLICT", stage="protocol", status_code=409)
             if previous.preprocess_id != spec.id:
                 raise AppError("同一幂等键不能修改 CAM 选项", code="IDEMPOTENCY_CONFLICT", stage="protocol", status_code=409)
             return previous
@@ -275,6 +290,8 @@ def create_pcb_task(db, user, *, batch_id, model_id, include_cam=False, idempote
         freeze_inputs(db, task, samples, settings)
         db.add(AuditLog(id=new_id(), actor_id=user.id, action="pcb.create", target_type="task", target_id=task.id,
                         reason="提交受控 PCB 分割任务"))
+        if _defer_delivery:
+            return task
         db.commit()
     except Exception:
         db.rollback()
@@ -316,7 +333,9 @@ def serialize_pcb_task(db, task, settings=None):
             "model": {"id": mv.slug, "model_version_id": mv.id, "name": NAMES.get(mv.slug, mv.slug),
                       "status": link.status, "weight_sha256": weight.sha256 if weight else None,
                       "protocol_hash": meta.get("protocol_hash")} if mv else None,
-            "samples": [{"sample_key": "image", "filename": meta.get("filename"), "sha256": sample.sha256 if sample else None}],
+            "samples": [{"sample_key": "image", "filename": meta.get("filename"), "sha256": sample.sha256 if sample else None,
+                         "width": sample.width if sample else None, "height": sample.height if sample else None}],
+            "parent_batch_id": meta.get("parent_batch_id"), "input_plan": meta.get("input_plan"),
             "artifacts": arts, "metrics": serialize_pcb_metrics(task),
             "cam": result.get("cam", {"status": "pending" if task.status in {"queued", "running"} else "not_requested"}),
             "bundle_ready": False, "open_path": f"/inspect/pcb/tasks/{task.id}",

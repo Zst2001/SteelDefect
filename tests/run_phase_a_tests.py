@@ -27,6 +27,8 @@ DEFAULT_TARGETS = [
     "tests/test_classification_infer.py",
     "tests/test_classification_boundaries.py",
     "tests/test_pcb_backend.py",
+    "tests/test_pcb_batch.py",
+    "tests/test_pcb_tiling.py",
     "tests/test_pcb_classification.py",
     "tests/test_slice_g.py", "tests/test_slice_c.py", "tests/test_slice_e.py",
     "tests/test_slice_f.py", "tests/test_slice_h3.py", "tests/test_slice_d.py",

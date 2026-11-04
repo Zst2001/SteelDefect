@@ -15,7 +15,7 @@ const temp=await fs.mkdtemp(path.join(os.tmpdir(),'steel-roi-review-'));
 const checks=[],errors=[],unexpected=[],submissions=[];
 const check=(value,label)=>{assert(value,label);checks.push(label);};
 const classes=['open','short','mousebite','spur','copper','pin-hole'].map((label_en,class_id)=>({label_en,class_id,label_zh:['断路','短路','鼠咬','毛刺','余铜','针孔'][class_id]}));
-const catalog={enabled:true,available:true,default_model:'efficientnet_b0',max_image_bytes:2097152,classes,models:[
+const catalog={enabled:true,available:true,default_model:'efficientnet_b0',max_image_bytes:10485760,max_pixels:16777216,supported_formats:['PNG','JPEG','WEBP','BMP','TIFF','GIF'],classes,models:[
   {model_id:'efficientnet_b0',name:'EfficientNet-B0',params:4015234,available:true,default:true},
   {model_id:'mobilenet_v3_small',name:'MobileNetV3-Small',params:1524006,available:true,default:false}]};
 function task(id) {
@@ -64,13 +64,14 @@ try {
   const png=Buffer.from(await page.evaluate(()=>{const c=document.createElement('canvas');c.width=224;c.height=224;c.getContext('2d').fillRect(0,0,224,224);return c.toDataURL('image/png').split(',')[1];}),'base64');
   const choose=()=>page.getByLabel('PCB 分类 ROI',{exact:true}).setInputFiles({name:'roi.png',mimeType:'image/png',buffer:png});
   await choose();await page.getByRole('img',{name:'待分类 ROI 预览'}).waitFor();
-  const submit=async()=>{await page.getByRole('button',{name:'开始 PCB 分类',exact:true}).click();await page.getByRole('alert').waitFor();};
-  await submit();await page.locator('#roi-model').selectOption('mobilenet_v3_small');await submit();
-  await page.locator('#roi-model').selectOption('efficientnet_b0');await submit();
+  const submit=async()=>{await page.getByRole('button',{name:'开始 PCB 分类',exact:true}).click();await page.getByRole('alert').first().waitFor();};
+  const selectOnly=async id=>{await page.getByRole('button',{name:'取消全选',exact:true}).click();await page.locator(`.roi-model-card input[value="${id}"]`).check();};
+  await submit();await selectOnly('mobilenet_v3_small');await submit();
+  await selectOnly('efficientnet_b0');await submit();
   check(uploads===1,'A-B-A retries reuse one uploaded batch');
   check(submissions.length===3&&!!submissions[0].key&&submissions[0].key===submissions[2].key,'returning to model A reuses its uncertain request key');
   check(submissions[1].key!==submissions[0].key,'different models use distinct request keys');
-  await page.getByRole('button',{name:'移除 ROI',exact:true}).click();
+  await page.getByRole('button',{name:'移除图像',exact:true}).click();
   check(await page.getByRole('img',{name:'待分类 ROI 预览'}).count()===0,'remove clears the ROI preview');
   check(await page.getByRole('button',{name:'开始 PCB 分类',exact:true}).isDisabled(),'remove disables submission');
   check(await page.getByRole('alert').count()===0,'remove clears stale submission error');

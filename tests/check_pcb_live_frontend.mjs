@@ -147,23 +147,26 @@ try {
   if (taskIds.length) check(new Set(observations.map(row=>row.model)).size === 3, 'existing tasks cover three different real models');
   for (const modelId of ['unet','unet_resnet18','unetpp_resnet18']) {
     await go('/inspect/pcb');
-    check(await page.getByRole('radio').count() === 3, `${modelId} live catalog shows three admitted models`);
+    check(await page.locator('.pcb-model input').count() === 3, `${modelId} live catalog shows three admitted models`);
     check(await page.getByLabel('PCB 原图',{exact:true}).isEnabled(), `${modelId} isolated service is enabled for acceptance`);
     await page.getByLabel('PCB 原图',{exact:true}).setInputFiles({name:'synthetic-reference-220.png',mimeType:'image/png',buffer:inputImage});
-    await readableImage('待分割 PCB 原图',`${modelId} synthetic input preview retains 220 coordinates`);
-    await page.locator(`input[type=radio][value="${modelId}"]`).check();
-    await page.locator('summary').filter({hasText:'高级选项'}).click();
-    await page.getByRole('checkbox',{name:'生成 Grad-CAM',exact:true}).focus();await page.keyboard.press('Space');
-    check(!(await page.getByRole('checkbox',{name:'添加配对 GT',exact:true}).isChecked()), `${modelId} new live task deliberately omits GT`);
+    await readableImage('synthetic-reference-220.png',`${modelId} synthetic input preview retains 220 coordinates`);
+    await page.getByRole('button',{name:'取消全选',exact:true}).click();
+    await page.locator(`.pcb-model input[value="${modelId}"]`).check();
+    await page.getByText('生成 Grad-CAM',{exact:true}).click();
+    check(await page.locator('.pcb-gt-pairs').count()===0, `${modelId} new live task deliberately omits GT`);
     if (modelId === 'unet') await capture('desktop-new-synthetic-input');
-    const createResponse = page.waitForResponse(r=>new URL(r.url()).pathname === '/api/scenes/pcb/segmentation/tasks' && r.request().method() === 'POST', {timeout:60000});
-    await page.getByRole('button',{name:'开始 PCB 分割',exact:true}).click();
+    const createResponse = page.waitForResponse(r=>new URL(r.url()).pathname === '/api/scenes/pcb/segmentation/tasks/batch' && r.request().method() === 'POST', {timeout:60000});
+    await page.getByRole('button',{name:'开始批量分割',exact:true}).click();
     const createdResponse = await createResponse;
     check(createdResponse.ok(), `${modelId} browser submission reached real task API successfully`);
     const created = await createdResponse.json();
-    assert.ok(validId(created.id), 'API returned an invalid task identifier');
-    newTaskId = created.id;
-    await page.waitForURL(`**/inspect/pcb/tasks/${newTaskId}`, {timeout:30000});
+    check(created.counts.total===1&&created.samples.length===1,`${modelId} single image/model has exactly one child`);
+    newTaskId = created.samples[0].tasks[0].id;
+    assert.ok(validId(newTaskId), 'API returned an invalid task identifier');
+    await page.waitForURL(`**/inspect/pcb/batches/${created.batch_id}`, {timeout:30000});
+    await page.getByRole('heading',{name:'全部完成',exact:true}).waitFor({timeout:180000});
+    await go(`/inspect/pcb/tasks/${newTaskId}`);
     await page.waitForFunction(() => !!document.querySelector('.pcb-result .task-status.ok, .pcb-result .task-status.bad'), null, {timeout:180000});
     check(await page.locator('.pcb-result .task-status.ok').count() === 1, `${modelId} real RQ Worker completed UI-created CPU task`);
     const finalTask = await page.evaluate(async id => {
@@ -202,7 +205,7 @@ try {
   await readableImage('PCB 原始图像','mobile original image remains readable');
   check(await page.evaluate(()=>document.documentElement.scrollWidth <= innerWidth+1), 'live result has no 390px horizontal overflow');
   await capture('mobile-created-real-result');
-  await go('/inspect/pcb');await page.getByRole('radio').first().waitFor();
+  await go('/inspect/pcb');await page.locator('.pcb-model input').first().waitFor();
   check(await page.evaluate(()=>document.documentElement.scrollWidth <= innerWidth+1), 'live workbench has no 390px horizontal overflow');
   await capture('mobile-live-workbench');
   // Existing index.html requests Google Fonts. Keep those requests blocked and

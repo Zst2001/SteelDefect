@@ -1,5 +1,5 @@
 export type RoiClass = { class_id:number; label_en:string; label_zh:string };
-export type RoiCatalog = { enabled:boolean; available:boolean; models:{model_id:string; name:string; params:number; available:boolean; default:boolean}[]; default_model:string; classes:RoiClass[]; max_image_bytes:number; message:string };
+export type RoiCatalog = { enabled:boolean; available:boolean; models:{model_id:string; name:string; params:number; available:boolean; default:boolean}[]; default_model:string; classes:RoiClass[]; max_image_bytes:number; max_pixels?:number; supported_formats?:string[]; message:string };
 export const ROI_PROTOCOL = "pcb_cls_deeppcb_roi_v0";
 export type RoiPrediction = RoiClass & {
   task_id:string; model_id:string; protocol_id:string;

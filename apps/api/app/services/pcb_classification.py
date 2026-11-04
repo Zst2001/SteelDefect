@@ -16,10 +16,11 @@ from app.errors import AppError
 from app.services.classification import _registered
 from app.services.dispatch import apply_task_delivery, enqueue
 from app.services.input_freeze import current_samples, freeze_inputs, lock_version
+from app.services.pcb_classification_uploads import MAX_UPLOAD_BYTES, SUPPORTED_FORMATS, prepare_upload
 from app.services.submission import existing_task, lock_user, request_id
 from app.util_time import new_id, utcnow
 from infer.pcb_classification.catalog import DEFAULT, MODELS, PROTOCOL, admitted, catalog
-from infer.pcb_classification.images import MAX_BYTES, decode
+from infer.pcb_classification.images import MAX_BYTES, MAX_PIXELS, decode
 
 TYPE = "pcb_classify"  # Task.type is VARCHAR(16); no migration or collision with steel classification.
 KIND = "pcb_cls_batch"
@@ -55,7 +56,8 @@ def catalog_payload(settings=None):
     ready = len(rows) == 2 and all(row["available"] for row in rows)
     classes = asset(DEFAULT, settings)["classes"] if ready else []
     return {"enabled": enabled, "available": enabled and ready, "models": rows, "classes": classes,
-            "default_model": DEFAULT, "protocol_id": PROTOCOL, "max_image_bytes": MAX_BYTES,
+            "default_model": DEFAULT, "protocol_id": PROTOCOL, "max_image_bytes": MAX_UPLOAD_BYTES,
+            "max_pixels": MAX_PIXELS, "supported_formats": list(SUPPORTED_FORMATS),
             "message": "仅上传已裁剪、以单个缺陷为主的 ROI；六类不包含正常类，不提供定位。"}
 
 
@@ -111,7 +113,10 @@ def create_batch(db, user, name, content, mime, settings=None):
     settings = settings or get_settings()
     require_enabled(settings)
     item = asset(DEFAULT, settings)
-    _, facts = image_bytes(name, content, mime)
+    try:
+        content, facts, source = prepare_upload(content, name)
+    except (ValueError, OSError) as exc:
+        raise AppError(str(exc), code="PCB_CLS_BAD_IMAGE", stage="file", status_code=400) from exc
     folder = path = None
     try:
         lock_user(db, user)
@@ -120,7 +125,7 @@ def create_batch(db, user, name, content, mime, settings=None):
         db.add(dataset)
         db.flush()
         meta = {"scene": "pcb", "task_kind": "classification", "protocol_id": PROTOCOL,
-                "filename": name[:128], "image": facts, "classes": item["classes"]}
+                "filename": name[:128], "image": facts, "source_image": source, "classes": item["classes"]}
         version = DatasetVersion(id=new_id(), dataset_id=dataset.id, kind=KIND, class_map_json=meta,
                                  preprocess_id=spec.id, is_fixed_test=False, forbid_student_gt_download=False)
         db.add(version)
@@ -137,7 +142,7 @@ def create_batch(db, user, name, content, mime, settings=None):
         db.add(AuditLog(id=new_id(), actor_id=user.id, action="pcb_cls.upload", target_type="dataset_version", target_id=version.id,
                         reason="已验证单张 ROI；不含真实类别标注"))
         db.commit()
-        return {"batch_id": version.id, "sample_count": 1, "has_gt": False, **facts}
+        return {"batch_id": version.id, "sample_count": 1, "has_gt": False, **facts, "source_image": source}
     except Exception:
         db.rollback()
         if path:
@@ -235,6 +240,7 @@ def serialize_task(db, task, settings=None):
     return {"id": task.id, "type": TYPE, "type_label": "PCB 缺陷分类", "scene": "pcb", "task_kind": "classification",
             "status": task.status, "error_summary": task.error_summary, "created_at": task.created_at.isoformat(),
             "has_gt": False, "n": 1, "classes": meta.get("classes", []), "input": meta.get("image", {}),
+            "source_image": meta.get("source_image"),
             "protocol_id": PROTOCOL, "model": {"id": mv.slug, "name": MODELS.get(mv.slug, (None, None, mv.slug))[2]} if mv else None,
             "result": result, "metrics": {"available": False}, "bundle_ready": False,
             "artifacts": [{"kind": a.kind, "rel_path": a.rel_path, "url": f"/api/tasks/{task.id}/file/{a.rel_path}"}

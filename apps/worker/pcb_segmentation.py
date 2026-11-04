@@ -33,6 +33,9 @@ def assert_pcb_execution(db, task, settings):
         raise AppError("任务创建者当前不可运行任务", code="TASK_ACTOR_UNAVAILABLE", stage="auth")
     try:
         snap = pcb_snapshot(db, task)
+        if snap["dataset"].get("batch_extension") == 1:
+            from infer.pcb.tiling import assert_current_source
+            assert_current_source()
         model = snap["models"][0]
         item = asset(model["slug"], settings)
         registered = register_model(db, item)
@@ -95,6 +98,21 @@ def metrics(gt, pred):
             "undefined_policy": "分母为 0 的指标为 null；不以置信度替代精度"}
 
 
+def compute_adapted(model_id, image, include_cam, root, input_plan):
+    """Outer deployment adapter; the original native model/CAM path is unchanged."""
+    from infer.pcb.tiling import assert_current_source, predict_tiled
+    assert_current_source()
+    if image.shape == (220, 220, 3) and input_plan["cam_supported"]:
+        output = compute(model_id, image, include_cam, root)
+    else:
+        layers, _ = predict_tiled(model_id, image, root=root)
+        cam = ({"status": "not_supported_for_size", "reason": "仅原生 220×220 RGB 图片支持 Grad-CAM；概率热力图仍可用"}
+               if include_cam else {"status": "not_requested"})
+        output = layers, cam
+    assert_current_source()
+    return output
+
+
 def run_pcb_body(db, task, settings):
     staged, published = [], []
     staging = None
@@ -105,33 +123,52 @@ def run_pcb_body(db, task, settings):
         slug = snap["models"][0]["slug"]
         mid = snap["models"][0]["id"]
         sample = db.query(Sample).filter_by(version_id=task.dataset_version_id).one()
+        extended = snap["dataset"].get("batch_extension") == 1
+        input_plan = snap["dataset"].get("input_plan") if extended else None
+        max_bytes = MAX_IMAGE_BYTES
+        if extended:
+            from app.services.pcb_batch import decode_image
+            from infer.pcb.tiling import limits
+            max_bytes = limits()["max_image_bytes"]
+        shape = (sample.height, sample.width)
         original_path = resolve_uri(sample.origin_uri, settings)
         with original_path.open("rb") as stream:
-            original = stream.read(MAX_IMAGE_BYTES + 1)
+            original = stream.read(max_bytes + 1)
         if hashlib.sha256(original).hexdigest() != frozen["origin_sha256"]:
             raise AppError("实际读取的图像与冻结输入不一致", code="INPUT_CHANGED", stage="file")
-        original, _ = image_bytes(original_path.name, original)
+        if extended:
+            original, _, facts = decode_image(original_path.name, original)
+            if facts["input_plan"] != input_plan or (facts["height"], facts["width"]) != shape:
+                raise AppError("图像解码信息与冻结输入不一致", code="INPUT_CHANGED", stage="file")
+        else:
+            original, _ = image_bytes(original_path.name, original)
         with Image.open(io.BytesIO(original)) as image:
-            image_rgb = np.asarray(image).copy()
+            image_rgb = np.asarray(image if image.mode == "RGB" else image.convert("RGB")).copy()
         gt = None
         if task.has_gt:
             mask_path = resolve_uri(sample.mask_uri, settings)
             with mask_path.open("rb") as stream:
-                mask_content = stream.read(MAX_IMAGE_BYTES + 1)
+                mask_content = stream.read(max_bytes + 1)
             if hashlib.sha256(mask_content).hexdigest() != frozen["mask_sha256"]:
                 raise AppError("实际读取的 GT 与冻结输入不一致", code="INPUT_CHANGED", stage="file")
-            normalized, _ = image_bytes("gt.png", mask_content, gt=True)
+            if extended:
+                normalized, _, _ = decode_image("gt.png", mask_content, gt=True, expected_size=(sample.width, sample.height))
+            else:
+                normalized, _ = image_bytes("gt.png", mask_content, gt=True)
             with Image.open(io.BytesIO(normalized)) as mask_image:
                 gt = np.asarray(mask_image).copy()
         include_cam = task_include_cam(db, task)
         # CPU work must not keep the read-only authorization locks: revocation
         # is allowed while computing and checked again before publication.
         db.commit()
-        layers, cam = compute(slug, image_rgb, include_cam, asset_root(settings))
+        if extended:
+            layers, cam = compute_adapted(slug, image_rgb, include_cam, asset_root(settings), input_plan)
+        else:
+            layers, cam = compute(slug, image_rgb, include_cam, asset_root(settings))
         pred = np.asarray(layers["pred_mask"])
         prob = np.asarray(layers["probability"])
-        if (pred.shape != (220, 220) or pred.dtype != np.uint8 or not set(np.unique(pred).tolist()) <= {0, 1}
-                or prob.shape != (220, 220) or not np.isfinite(prob).all() or np.any(prob < 0) or np.any(prob > 1)):
+        if (pred.shape != shape or pred.dtype != np.uint8 or not set(np.unique(pred).tolist()) <= {0, 1}
+                or prob.shape != shape or not np.isfinite(prob).all() or np.any(prob < 0) or np.any(prob > 1)):
             raise ValueError("invalid PCB output")
         metrics_payload = metrics(gt, pred) if gt is not None else {"available": False}
         # Display-only derivative: retain the frozen 0/1 prediction for metrics
@@ -141,18 +178,21 @@ def run_pcb_body(db, task, settings):
                    ("mask_visual", f"mask_visual/{mid}/image.png", pred * np.uint8(255), mid)]
         for kind, key in (("overlay", "overlay"), ("boundary", "boundary"), ("probability", "probability_heatmap")):
             value = np.asarray(layers[key])
-            if value.shape != (220, 220, 3) or value.dtype != np.uint8:
+            if value.shape != (*shape, 3) or value.dtype != np.uint8:
                 raise ValueError("invalid PCB layer")
             outputs.append((kind, f"{kind}/{mid}/image.png", value, mid))
         if cam.get("status") == "ok":
             value = np.asarray(layers.get("cam"))
-            if value.shape != (220, 220, 3) or value.dtype != np.uint8:
+            if value.shape != (*shape, 3) or value.dtype != np.uint8:
                 # An optional interpretation cannot invalidate base segmentation.
                 cam = {"status": "failed", "reason": "Grad-CAM 输出格式无效；基础分割结果仍可用"}
             else:
                 outputs.append(("cam", f"cam/{mid}/image.png", value, mid))
         if gt is not None:
-            from infer.pcb.visualize import error_map
+            if extended:
+                from infer.pcb.tiling import error_map
+            else:
+                from infer.pcb.visualize import error_map
             outputs.extend([("gt", "gt/image.png", gt, None), ("error", f"error/{mid}/image.png", error_map(gt, pred), mid)])
         guard = TaskArtifacts(db, task, settings)
         staging = guard.locate("pcb-stage-" + new_id(), must_exist=False)
@@ -169,6 +209,11 @@ def run_pcb_body(db, task, settings):
                   "foreground_pixels": int((pred == 1).sum()), "cam": cam,
                   "legend": {"mask": "原始二值掩码：0 背景 / 1 缺陷", "mask_visual": "可视化掩码：0 背景 / 255 缺陷",
                              "probability": "缺陷 softmax 分数，非精度", "error": "绿 TP / 红 FP / 蓝 FN"}}
+        if extended:
+            result.update({"input_plan": input_plan, "extension_hash": snap["dataset"]["extension_hash"],
+                           "width": sample.width, "height": sample.height,
+                           "parent_batch_id": snap["dataset"]["parent_batch_id"],
+                           "input_adaptation": input_plan["input_adaptation"]})
         result_path = staging / "result.json"
         staged.append((result_path, "pcb_result", "pcb.json", None, None))
         result_path.write_text(json.dumps(result, ensure_ascii=False, indent=2, allow_nan=False), encoding="utf-8")

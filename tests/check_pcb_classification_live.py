@@ -6,6 +6,7 @@ processes, never production hooks. A fresh --output preserves earlier evidence.
 """
 import argparse
 import base64
+import hashlib
 from datetime import timedelta
 import io
 import json
@@ -254,8 +255,14 @@ def main():
                 timeout,_=new_task("timeout");burst("--burst-timeout");failed(timeout,"PCB_CLS_JOB_TIMEOUT","resource")
                 unclaimed,_=new_task("preclaim");burst("--burst-start-failure");failed(unclaimed,"PCB_CLS_JOB_START_FAILED","queue")
                 auth()
-                for filename,content,mime in [("roi.png",b"","image/png"),("roi.png",b"broken","image/png"),("roi.png",png.getvalue(),"image/jpeg"),("../roi.png",png.getvalue(),"image/png")]:
+                for filename,content,mime in [("roi.png",b"","image/png"),("roi.png",b"broken","image/png"),("../roi.png",png.getvalue(),"image/png")]:
                     check(http.post("/api/scenes/pcb/classification/uploads",files={"file":(filename,content,mime)}).status_code==400,"real HTTP invalid image "+filename+str(len(content)))
+                detected=http.post("/api/scenes/pcb/classification/uploads",files={"file":("camera.jpg",png.getvalue(),"image/jpeg")})
+                check(detected.status_code==200,"real HTTP trusts decoded image content over filename/MIME")
+                detected=detected.json()
+                check(detected["source_image"]["format"]=="PNG" and detected["source_image"]["sha256"]==hashlib.sha256(png.getvalue()).hexdigest(),"content-detected upload preserves original provenance")
+                with SessionLocal() as db:
+                    check(db.query(Task).filter_by(dataset_version_id=detected["batch_id"]).count()==0,"upload alone creates no model tasks")
                 for model in ("unet","resnet18","../efficientnet_b0"):
                     check(http.post("/api/scenes/pcb/classification/tasks",json={"batch_id":batch_id,"model_id":model}).status_code==400,"unknown model "+model)
                 for rel in ("inputs.json","task.json","model.pth","MANIFEST.json","../inputs.json","origin/%252e%252e/inputs.json"):
